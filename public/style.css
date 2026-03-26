@@ -109,6 +109,19 @@ header h1 {
   background: #f8f9fa;
 }
 
+.messages-top-loading {
+  padding: 8px 15px 0;
+  font-size: 0.8rem;
+  color: #777;
+}
+
+.messages-loading {
+  text-align: center;
+  padding: 40px 20px;
+  color: #888;
+  font-size: 0.95rem;
+}
+
 .message {
   background: white;
   border-radius: 12px;
@@ -179,6 +192,23 @@ header h1 {
   border-radius: 8px;
   cursor: pointer;
   transition: transform 0.2s;
+}
+
+.message-image.loading {
+  visibility: hidden;
+}
+
+.image-placeholder {
+  min-height: 120px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #efefef, #e5e5e5, #efefef);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
 }
 
 .message-content.image img:hover {
@@ -341,6 +371,15 @@ header h1 {
   to {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
   }
 }
 

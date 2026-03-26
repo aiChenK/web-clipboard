@@ -1,5 +1,8 @@
 const socket = io();
 
+const PAGE_SIZE = 30;
+const TOP_LOAD_THRESHOLD = 60;
+
 const authSection = document.getElementById('auth-section');
 const chatSection = document.getElementById('chat-section');
 const passwordInput = document.getElementById('password-input');
@@ -18,6 +21,28 @@ const expireInfo = document.getElementById('expire-info');
 const toastEl = document.getElementById('toast');
 
 let messages = [];
+let hasMoreMessages = false;
+let initialLoaded = false;
+let isInitialLoading = false;
+let isLoadingOlder = false;
+
+const topLoadingIndicator = document.createElement('div');
+topLoadingIndicator.className = 'messages-top-loading hidden';
+topLoadingIndicator.textContent = '正在加载更早消息...';
+messagesList.parentElement.insertBefore(topLoadingIndicator, messagesList);
+
+const imageObserver = 'IntersectionObserver' in window
+  ? new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const img = entry.target;
+        if (!img.src) {
+          img.src = img.dataset.src;
+        }
+        imageObserver.unobserve(img);
+      });
+    }, { root: messagesList, rootMargin: '200px' })
+  : null;
 
 function showToast(message) {
   toastEl.textContent = message;
@@ -30,16 +55,16 @@ function showToast(message) {
 function formatTime(timestamp) {
   const date = new Date(timestamp);
   const now = new Date();
-  const isToday = date.getFullYear() === now.getFullYear() && 
-                  date.getMonth() === now.getMonth() && 
-                  date.getDate() === now.getDate();
-  
+  const isToday = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+
   if (isToday) {
     return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  } else {
-    return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' }) + ' ' + 
-           date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
   }
+  return `${date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })} ${
+    date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }`;
 }
 
 function updateMessageCount() {
@@ -47,48 +72,152 @@ function updateMessageCount() {
   clearAllBtn.disabled = messages.length === 0;
 }
 
-function renderMessages() {
-  if (messages.length === 0) {
-    messagesList.innerHTML = `
-      <div class="empty-state">
-        <p>暂无消息</p>
-        <p style="font-size: 0.8rem; margin-top: 8px;">发送文字或图片开始使用</p>
-      </div>
-    `;
-  } else {
-    messagesList.innerHTML = messages.map(msg => createMessageHTML(msg)).join('');
-    scrollToBottom();
+function updateExpireInfo(hours) {
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    expireInfo.textContent = `数据保留 ${days} 天`;
+    return;
   }
+  expireInfo.textContent = `数据保留 ${hours} 小时`;
+}
+
+function setTopLoading(visible) {
+  topLoadingIndicator.classList.toggle('hidden', !visible);
+}
+
+function renderLoadingState() {
+  messagesList.innerHTML = '<div class="messages-loading">正在加载消息...</div>';
   updateMessageCount();
 }
 
-function createMessageHTML(msg) {
-  const contentHTML = msg.type === 'text' 
-    ? `<div class="message-content text">${escapeHTML(msg.content)}</div>`
-    : `<div class="message-content image"><img src="${msg.content}" alt="图片" onclick="copyImageToClipboard('${msg.content}')"></div>`;
-  
-  const copyBtn = msg.type === 'text' 
-    ? `<button class="btn btn-secondary" onclick="copyTextToClipboard('${escapeHTML(msg.content)}')">复制</button>`
-    : `<button class="btn btn-secondary" onclick="copyImageToClipboard('${msg.content}')">复制图片</button>`;
-  
-  return `
-    <div class="message" data-id="${msg.id}">
-      <div class="message-header">
-        <span class="message-time">${formatTime(msg.timestamp)}</span>
-        <button class="message-delete" onclick="deleteMessage('${msg.id}')">删除</button>
-      </div>
-      ${contentHTML}
-      <div class="message-actions">
-        ${copyBtn}
-      </div>
+function renderEmptyState() {
+  messagesList.innerHTML = `
+    <div class="empty-state">
+      <p>暂无消息</p>
+      <p style="font-size: 0.8rem; margin-top: 8px;">发送文字或图片开始使用</p>
     </div>
   `;
+  updateMessageCount();
 }
 
-function escapeHTML(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML.replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n');
+function observeImage(img) {
+  if (!img.dataset.src) return;
+  if (img.dataset.src.startsWith('data:')) {
+    img.src = img.dataset.src;
+    return;
+  }
+  if (imageObserver) {
+    imageObserver.observe(img);
+    return;
+  }
+  img.src = img.dataset.src;
+}
+
+function createImageContent(dataUrl) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'message-content image';
+
+  const placeholder = document.createElement('div');
+  placeholder.className = 'image-placeholder';
+  placeholder.textContent = '图片加载中...';
+
+  const img = document.createElement('img');
+  img.alt = 'image';
+  img.className = 'message-image loading';
+  img.dataset.src = dataUrl;
+  img.loading = 'lazy';
+  img.decoding = 'async';
+
+  img.addEventListener('load', () => {
+    img.classList.remove('loading');
+    placeholder.classList.add('hidden');
+  });
+
+  img.addEventListener('error', () => {
+    placeholder.textContent = '图片加载失败';
+    img.classList.add('hidden');
+  });
+
+  img.addEventListener('click', () => copyImageToClipboard(dataUrl));
+
+  wrapper.appendChild(placeholder);
+  wrapper.appendChild(img);
+  observeImage(img);
+  return wrapper;
+}
+
+function createMessageElement(msg) {
+  const messageEl = document.createElement('div');
+  messageEl.className = 'message';
+  messageEl.dataset.id = msg.id;
+
+  const headerEl = document.createElement('div');
+  headerEl.className = 'message-header';
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'message-time';
+  timeEl.textContent = formatTime(msg.timestamp);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'message-delete';
+  deleteBtn.textContent = '删除';
+  deleteBtn.addEventListener('click', () => deleteMessage(msg.id));
+
+  headerEl.appendChild(timeEl);
+  headerEl.appendChild(deleteBtn);
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'message-actions';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'btn btn-secondary';
+
+  if (msg.type === 'text') {
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content text';
+    contentEl.textContent = msg.content;
+    messageEl.appendChild(headerEl);
+    messageEl.appendChild(contentEl);
+
+    copyBtn.textContent = '复制';
+    copyBtn.addEventListener('click', () => copyTextToClipboard(msg.content));
+  } else {
+    const imageContent = createImageContent(msg.content);
+    messageEl.appendChild(headerEl);
+    messageEl.appendChild(imageContent);
+
+    copyBtn.textContent = '复制图片';
+    copyBtn.addEventListener('click', () => copyImageToClipboard(msg.content));
+  }
+
+  actionsEl.appendChild(copyBtn);
+  messageEl.appendChild(actionsEl);
+  return messageEl;
+}
+
+function renderMessages({ scrollBottom = false } = {}) {
+  if (isInitialLoading && messages.length === 0) {
+    renderLoadingState();
+    return;
+  }
+
+  if (messages.length === 0) {
+    renderEmptyState();
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  messages.forEach((msg) => {
+    fragment.appendChild(createMessageElement(msg));
+  });
+
+  messagesList.innerHTML = '';
+  messagesList.appendChild(fragment);
+  updateMessageCount();
+
+  if (scrollBottom) {
+    scrollToBottom();
+  }
 }
 
 function scrollToBottom() {
@@ -102,6 +231,79 @@ function checkAuth() {
   }
 }
 
+async function fetchMessagesPage({ before, limit = PAGE_SIZE } = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  if (Number.isFinite(before)) {
+    params.set('before', String(before));
+  }
+
+  const response = await fetch(`/api/messages?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load messages: ${response.status}`);
+  }
+  return response.json();
+}
+
+async function loadInitialMessages() {
+  isInitialLoading = true;
+  renderMessages();
+
+  try {
+    const data = await fetchMessagesPage({ limit: PAGE_SIZE });
+    messages = data.messages || [];
+    hasMoreMessages = Boolean(data.hasMore);
+    updateExpireInfo(data.expireHours || 168);
+    initialLoaded = true;
+    isInitialLoading = false;
+    renderMessages({ scrollBottom: true });
+  } catch (error) {
+    isInitialLoading = false;
+    renderMessages();
+    showToast('加载消息失败');
+    console.error(error);
+  }
+}
+
+async function loadOlderMessages() {
+  if (!hasMoreMessages || isLoadingOlder || isInitialLoading || messages.length === 0) {
+    return;
+  }
+
+  const oldestTimestamp = messages[0].timestamp;
+  if (!Number.isFinite(oldestTimestamp)) {
+    return;
+  }
+
+  isLoadingOlder = true;
+  setTopLoading(true);
+
+  const prevScrollHeight = messagesList.scrollHeight;
+  const prevScrollTop = messagesList.scrollTop;
+
+  try {
+    const data = await fetchMessagesPage({
+      before: oldestTimestamp,
+      limit: PAGE_SIZE
+    });
+
+    const olderMessages = data.messages || [];
+    if (olderMessages.length > 0) {
+      messages = olderMessages.concat(messages);
+      renderMessages();
+      const heightDiff = messagesList.scrollHeight - prevScrollHeight;
+      messagesList.scrollTop = prevScrollTop + heightDiff;
+    }
+    hasMoreMessages = Boolean(data.hasMore);
+  } catch (error) {
+    showToast('加载更早消息失败');
+    console.error(error);
+  } finally {
+    isLoadingOlder = false;
+    setTopLoading(false);
+  }
+}
+
 async function verifyPassword(password) {
   try {
     const response = await fetch('/api/auth', {
@@ -109,54 +311,35 @@ async function verifyPassword(password) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
     });
-    
+
     const data = await response.json();
-    
+
     if (data.success) {
       localStorage.setItem('web-clipboard-password', password);
       authSection.classList.add('hidden');
       chatSection.classList.remove('hidden');
-      loadMessages();
-    } else {
-      authError.classList.remove('hidden');
-      localStorage.removeItem('web-clipboard-password');
+      loadInitialMessages();
+      return;
     }
+
+    authError.classList.remove('hidden');
+    localStorage.removeItem('web-clipboard-password');
   } catch (error) {
     showToast('验证失败');
     console.error(error);
   }
 }
 
-async function loadMessages() {
-  try {
-    const response = await fetch('/api/messages');
-    if (response.ok) {
-      const data = await response.json();
-      messages = data.messages || [];
-      const expireHours = data.expireHours || 168;
-      updateExpireInfo(expireHours);
-      renderMessages();
-    }
-  } catch (error) {
-    console.error('加载消息失败:', error);
-  }
-}
-
-function updateExpireInfo(hours) {
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    expireInfo.textContent = `数据保留 ${days} 天`;
-  } else {
-    expireInfo.textContent = `数据保留 ${hours} 小时`;
-  }
-}
-
 async function sendMessage(type, content) {
-  if (!content || !content.trim()) {
+  if (type === 'text' && (!content || !content.trim())) {
     showToast('内容不能为空');
     return;
   }
-  
+
+  if (type === 'image' && !content) {
+    return;
+  }
+
   try {
     await fetch('/api/messages', {
       method: 'POST',
@@ -180,8 +363,6 @@ async function deleteMessage(id) {
   }
 }
 
-window.deleteMessage = deleteMessage;
-
 async function clearAllMessages() {
   showConfirmModal('确定要清空所有消息吗？', async () => {
     try {
@@ -201,24 +382,24 @@ function showConfirmModal(message, onConfirm) {
   const modalMessage = document.getElementById('modal-message');
   const cancelBtn = document.getElementById('modal-cancel');
   const confirmBtn = document.getElementById('modal-confirm');
-  
+
   modalMessage.textContent = message;
   modal.classList.remove('hidden');
-  
+
   const closeModal = () => {
     modal.classList.add('hidden');
     cancelBtn.removeEventListener('click', closeModal);
     confirmBtn.removeEventListener('click', handleConfirm);
   };
-  
+
   const handleConfirm = () => {
     closeModal();
     onConfirm();
   };
-  
+
   cancelBtn.addEventListener('click', closeModal);
   confirmBtn.addEventListener('click', handleConfirm);
-  
+
   modal.onclick = (e) => {
     if (e.target === modal) {
       closeModal();
@@ -239,42 +420,41 @@ async function pasteText() {
   }
 }
 
-window.copyTextToClipboard = async function(text) {
+async function copyTextToClipboard(text) {
   try {
-    const decodedText = text.replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"');
-    await navigator.clipboard.writeText(decodedText);
+    await navigator.clipboard.writeText(text);
     showToast('已复制到剪贴板');
   } catch (error) {
     showToast('复制失败');
     console.error(error);
   }
-};
+}
 
-window.copyImageToClipboard = async function(dataUrl) {
+async function copyImageToClipboard(dataUrl) {
   try {
     const response = await fetch(dataUrl);
     let blob = await response.blob();
-    
+
     if (blob.type !== 'image/png') {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const img = new Image();
-      
+
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
         img.src = dataUrl;
       });
-      
+
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       ctx.drawImage(img, 0, 0);
-      
+
       const pngDataUrl = canvas.toDataURL('image/png');
       const pngResponse = await fetch(pngDataUrl);
       blob = await pngResponse.blob();
     }
-    
+
     if (typeof ClipboardItem !== 'undefined') {
       await navigator.clipboard.write([
         new ClipboardItem({ 'image/png': blob })
@@ -287,12 +467,11 @@ window.copyImageToClipboard = async function(dataUrl) {
     console.error('复制图片失败:', error);
     showToast('复制图片失败，请尝试右键另存');
   }
-};
+}
 
 async function handleImageFiles(files) {
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue;
-    
     const reader = new FileReader();
     reader.onload = async (e) => {
       await sendMessage('image', e.target.result);
@@ -304,21 +483,21 @@ async function handleImageFiles(files) {
 async function pasteImage() {
   try {
     const items = await navigator.clipboard.read();
-    
+
     for (const item of items) {
       for (const type of item.types) {
-        if (type.startsWith('image/')) {
-          const blob = await item.getType(type);
-          const reader = new FileReader();
-          reader.onload = async (e) => {
-            await sendMessage('image', e.target.result);
-          };
-          reader.readAsDataURL(blob);
-          return;
-        }
+        if (!type.startsWith('image/')) continue;
+
+        const blob = await item.getType(type);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          await sendMessage('image', e.target.result);
+        };
+        reader.readAsDataURL(blob);
+        return;
       }
     }
-    
+
     showToast('剪贴板中没有图片');
   } catch (error) {
     showToast('无法读取剪贴板图片');
@@ -328,7 +507,7 @@ async function pasteImage() {
 
 function autoResizeTextarea() {
   textInput.style.height = 'auto';
-  textInput.style.height = Math.min(textInput.scrollHeight, 100) + 'px';
+  textInput.style.height = `${Math.min(textInput.scrollHeight, 100)}px`;
 }
 
 authBtn.addEventListener('click', () => verifyPassword(passwordInput.value));
@@ -340,7 +519,8 @@ passwordInput.addEventListener('input', () => {
 });
 
 sendTextBtn.addEventListener('click', () => {
-  sendMessage('text', textInput.value);
+  const value = textInput.value;
+  sendMessage('text', value);
   textInput.value = '';
   autoResizeTextarea();
 });
@@ -353,7 +533,6 @@ textInput.addEventListener('keypress', (e) => {
 });
 
 textInput.addEventListener('input', autoResizeTextarea);
-
 pasteTextBtn.addEventListener('click', pasteText);
 pasteImageBtn.addEventListener('click', pasteImage);
 clearAllBtn.addEventListener('click', clearAllMessages);
@@ -363,17 +542,22 @@ imageInput.addEventListener('change', (e) => {
   imageInput.value = '';
 });
 
+messagesList.addEventListener('scroll', () => {
+  if (messagesList.scrollTop <= TOP_LOAD_THRESHOLD) {
+    loadOlderMessages();
+  }
+});
+
 document.addEventListener('paste', (e) => {
-  if (document.activeElement === textInput) {
-    const items = e.clipboardData.items;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        handleImageFiles([file]);
-        break;
-      }
-    }
+  if (document.activeElement !== textInput) return;
+
+  const items = e.clipboardData.items;
+  for (const item of items) {
+    if (!item.type.startsWith('image/')) continue;
+    e.preventDefault();
+    const file = item.getAsFile();
+    handleImageFiles([file]);
+    break;
   }
 });
 
@@ -388,23 +572,28 @@ socket.on('disconnect', () => {
 });
 
 socket.on('sync', (data) => {
-  messages = data.messages || [];
-  renderMessages();
+  if (initialLoaded) return;
+  if (!Array.isArray(data.messages)) return;
+
+  messages = data.messages;
+  hasMoreMessages = Boolean(data.hasMore);
+  renderMessages({ scrollBottom: true });
 });
 
 socket.on('message-new', (msg) => {
   messages.push(msg);
-  renderMessages();
+  renderMessages({ scrollBottom: true });
   showToast('收到新消息');
 });
 
 socket.on('message-delete', (id) => {
-  messages = messages.filter(m => m.id !== id);
+  messages = messages.filter((m) => m.id !== id);
   renderMessages();
 });
 
 socket.on('messages-clear', () => {
   messages = [];
+  hasMoreMessages = false;
   renderMessages();
 });
 

@@ -15,11 +15,33 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || 'aichenk';
 const EXPIRE_HOURS = parseInt(process.env.EXPIRE_HOURS) || 168;
+const MESSAGE_PAGE_SIZE = parseInt(process.env.MESSAGE_PAGE_SIZE) || 30;
+const SOCKET_SYNC_LIMIT = parseInt(process.env.SOCKET_SYNC_LIMIT) || 20;
 
 let messages = [];
 let lastActivity = Date.now();
 
 const EXPIRE_TIME = EXPIRE_HOURS * 60 * 60 * 1000;
+
+function clampPageSize(limit) {
+  if (!Number.isFinite(limit)) return MESSAGE_PAGE_SIZE;
+  return Math.min(Math.max(limit, 1), 100);
+}
+
+function getMessagesPage({ before, limit }) {
+  const pageLimit = clampPageSize(limit);
+  const source = Number.isFinite(before)
+    ? messages.filter((item) => item.timestamp < before)
+    : messages;
+  const start = Math.max(source.length - pageLimit, 0);
+  const page = source.slice(start);
+
+  return {
+    messages: page,
+    hasMore: start > 0,
+    total: messages.length
+  };
+}
 
 function cleanupExpiredData() {
   const now = Date.now();
@@ -46,7 +68,10 @@ app.post('/api/auth', (req, res) => {
 });
 
 app.get('/api/messages', (req, res) => {
-  res.json({ messages, expireHours: EXPIRE_HOURS });
+  const before = Number(req.query.before);
+  const limit = Number(req.query.limit);
+  const page = getMessagesPage({ before, limit });
+  res.json({ ...page, expireHours: EXPIRE_HOURS });
 });
 
 app.post('/api/messages', (req, res) => {
@@ -99,7 +124,11 @@ app.post('/api/messages/clear', (req, res) => {
 io.on('connection', (socket) => {
   console.log('用户连接:', socket.id);
   
-  socket.emit('sync', { messages });
+  const initialPage = getMessagesPage({
+    before: Number.NaN,
+    limit: SOCKET_SYNC_LIMIT
+  });
+  socket.emit('sync', initialPage);
   
   socket.on('disconnect', () => {
     console.log('用户断开连接:', socket.id);
