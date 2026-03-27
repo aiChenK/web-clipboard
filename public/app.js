@@ -25,6 +25,7 @@ let hasMoreMessages = false;
 let initialLoaded = false;
 let isInitialLoading = false;
 let isLoadingOlder = false;
+let isReconnectRefreshing = false;
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -262,6 +263,27 @@ async function loadInitialMessages() {
     renderMessages();
     showToast('加载消息失败');
     console.error(error);
+  }
+}
+
+async function refreshMessagesAfterReconnect() {
+  if (!initialLoaded || isInitialLoading || isReconnectRefreshing) {
+    return;
+  }
+
+  isReconnectRefreshing = true;
+  try {
+    const data = await fetchMessagesPage({ limit: PAGE_SIZE });
+    if (!Array.isArray(data.messages)) return;
+    messages = data.messages;
+    hasMoreMessages = Boolean(data.hasMore);
+    updateExpireInfo(data.expireHours || 168);
+    renderMessages({ scrollBottom: true });
+  } catch (error) {
+    showToast('重连后刷新失败');
+    console.error(error);
+  } finally {
+    isReconnectRefreshing = false;
   }
 }
 
@@ -564,6 +586,7 @@ document.addEventListener('paste', (e) => {
 socket.on('connect', () => {
   connectionStatus.textContent = '已连接';
   connectionStatus.className = 'status connected';
+  refreshMessagesAfterReconnect();
 });
 
 socket.on('disconnect', () => {
