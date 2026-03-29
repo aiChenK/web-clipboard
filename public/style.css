@@ -341,6 +341,7 @@ header h1 {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 10px 15px;
   background: #f8f9fa;
   border-top: 1px solid #eee;
@@ -353,6 +354,12 @@ header h1 {
   padding: 3px 10px;
   border-radius: 20px;
   font-size: 0.7rem;
+}
+
+#logout-btn {
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 0.75rem;
 }
 
 .status.connected {
@@ -495,5 +502,13 @@ header h1 {
   .action-row {
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .status-bar {
+    flex-wrap: wrap;
+  }
+
+  #logout-btn {
+    margin-left: 0;
   }
 }

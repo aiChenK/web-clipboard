@@ -18,6 +18,7 @@ const pasteTextBtn = document.getElementById('paste-text');
 const imageInput = document.getElementById('image-input');
 const pasteImageBtn = document.getElementById('paste-image');
 const clearAllBtn = document.getElementById('clear-all');
+const logoutBtn = document.getElementById('logout-btn');
 const connectionStatus = document.getElementById('connection-status');
 const messageCount = document.getElementById('message-count');
 const expireInfo = document.getElementById('expire-info');
@@ -31,6 +32,7 @@ let isInitialLoading = false;
 let isLoadingOlder = false;
 let isReconnectRefreshing = false;
 let imageProcessingCount = 0;
+let isAuthenticated = false;
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -298,6 +300,27 @@ function checkAuth() {
   }
 }
 
+function logout(showMessage = true) {
+  localStorage.removeItem('web-clipboard-password');
+  isAuthenticated = false;
+  messages = [];
+  hasMoreMessages = false;
+  initialLoaded = false;
+  isInitialLoading = false;
+  isLoadingOlder = false;
+  isReconnectRefreshing = false;
+  setTopLoading(false);
+  authSection.classList.remove('hidden');
+  chatSection.classList.add('hidden');
+  authError.classList.add('hidden');
+  passwordInput.value = '';
+  passwordInput.focus();
+  renderEmptyState();
+  if (showMessage) {
+    showToast('已退出登录');
+  }
+}
+
 async function fetchMessagesPage({ before, limit = PAGE_SIZE } = {}) {
   const params = new URLSearchParams();
   params.set('limit', String(limit));
@@ -403,6 +426,7 @@ async function verifyPassword(password) {
     const data = await response.json();
 
     if (data.success) {
+      isAuthenticated = true;
       localStorage.setItem('web-clipboard-password', password);
       authSection.classList.add('hidden');
       chatSection.classList.remove('hidden');
@@ -768,6 +792,7 @@ textInput.addEventListener('input', autoResizeTextarea);
 pasteTextBtn.addEventListener('click', pasteText);
 pasteImageBtn.addEventListener('click', pasteImage);
 clearAllBtn.addEventListener('click', clearAllMessages);
+logoutBtn.addEventListener('click', () => logout(true));
 
 imageInput.addEventListener('change', (e) => {
   handleImageFiles(e.target.files);
@@ -796,6 +821,7 @@ document.addEventListener('paste', (e) => {
 socket.on('connect', () => {
   connectionStatus.textContent = '已连接';
   connectionStatus.className = 'status connected';
+  if (!isAuthenticated) return;
   refreshMessagesAfterReconnect();
 });
 
@@ -805,6 +831,7 @@ socket.on('disconnect', () => {
 });
 
 socket.on('sync', (data) => {
+  if (!isAuthenticated) return;
   if (initialLoaded) return;
   if (!Array.isArray(data.messages)) return;
 
@@ -814,17 +841,20 @@ socket.on('sync', (data) => {
 });
 
 socket.on('message-new', (msg) => {
+  if (!isAuthenticated) return;
   messages.push(msg);
   renderMessages({ scrollBottom: true });
   showToast('收到新消息');
 });
 
 socket.on('message-delete', (id) => {
+  if (!isAuthenticated) return;
   messages = messages.filter((m) => m.id !== id);
   renderMessages();
 });
 
 socket.on('messages-clear', () => {
+  if (!isAuthenticated) return;
   messages = [];
   hasMoreMessages = false;
   renderMessages();
