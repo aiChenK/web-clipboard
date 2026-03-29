@@ -277,16 +277,19 @@ header h1 {
 
 .action-row {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   margin-top: 10px;
 }
 
 .processing-state {
-  margin-right: auto;
   font-size: 0.8rem;
   color: #666;
+}
+
+#clear-all {
+  margin-left: auto;
 }
 
 .btn {
