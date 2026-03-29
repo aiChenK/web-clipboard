@@ -165,7 +165,6 @@ function createMessageElement(msg) {
   deleteBtn.addEventListener('click', () => deleteMessage(msg.id));
 
   headerEl.appendChild(timeEl);
-  headerEl.appendChild(deleteBtn);
 
   const actionsEl = document.createElement('div');
   actionsEl.className = 'message-actions';
@@ -192,6 +191,7 @@ function createMessageElement(msg) {
   }
 
   actionsEl.appendChild(copyBtn);
+  actionsEl.appendChild(deleteBtn);
   messageEl.appendChild(actionsEl);
   return messageEl;
 }
