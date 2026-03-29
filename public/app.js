@@ -2,6 +2,9 @@ const socket = io();
 
 const PAGE_SIZE = 30;
 const TOP_LOAD_THRESHOLD = 60;
+const ORIGINAL_FETCH_TIMEOUT = 5000;
+const THUMBNAIL_MAX_EDGE = 480;
+const THUMBNAIL_NO_COMPRESS_MAX_BYTES = 500 * 1024;
 
 const authSection = document.getElementById('auth-section');
 const chatSection = document.getElementById('chat-section');
@@ -19,6 +22,7 @@ const connectionStatus = document.getElementById('connection-status');
 const messageCount = document.getElementById('message-count');
 const expireInfo = document.getElementById('expire-info');
 const toastEl = document.getElementById('toast');
+const imageProcessingState = document.getElementById('image-processing-state');
 
 let messages = [];
 let hasMoreMessages = false;
@@ -26,6 +30,7 @@ let initialLoaded = false;
 let isInitialLoading = false;
 let isLoadingOlder = false;
 let isReconnectRefreshing = false;
+let imageProcessingCount = 0;
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -51,6 +56,32 @@ function showToast(message) {
   setTimeout(() => {
     toastEl.classList.add('hidden');
   }, 3000);
+}
+
+function getImageContent(content) {
+  if (typeof content === 'string') {
+    return { thumbnail: content, hasOriginal: false };
+  }
+  if (content && typeof content === 'object') {
+    const thumbnail = typeof content.thumbnail === 'string' ? content.thumbnail : '';
+    const original = typeof content.original === 'string' ? content.original : '';
+    const hasOriginal = typeof content.hasOriginal === 'boolean'
+      ? content.hasOriginal
+      : Boolean(original && original !== thumbnail);
+    return { thumbnail: thumbnail || original, original, hasOriginal };
+  }
+  return { thumbnail: '', hasOriginal: false };
+}
+
+function setImageProcessing(active) {
+  imageProcessingCount += active ? 1 : -1;
+  imageProcessingCount = Math.max(imageProcessingCount, 0);
+
+  const isProcessing = imageProcessingCount > 0;
+  imageProcessingState.classList.toggle('hidden', !isProcessing);
+  imageProcessingState.textContent = isProcessing
+    ? `图片处理中${imageProcessingCount > 1 ? ` (${imageProcessingCount})` : ''}...`
+    : '';
 }
 
 function formatTime(timestamp) {
@@ -114,7 +145,9 @@ function observeImage(img) {
   img.src = img.dataset.src;
 }
 
-function createImageContent(dataUrl) {
+function createImageContent(msg) {
+  const imageContent = getImageContent(msg.content);
+  const thumbnailUrl = imageContent.thumbnail;
   const wrapper = document.createElement('div');
   wrapper.className = 'message-content image';
 
@@ -125,7 +158,7 @@ function createImageContent(dataUrl) {
   const img = document.createElement('img');
   img.alt = 'image';
   img.className = 'message-image loading';
-  img.dataset.src = dataUrl;
+  img.dataset.src = thumbnailUrl;
   img.loading = 'lazy';
   img.decoding = 'async';
 
@@ -139,7 +172,12 @@ function createImageContent(dataUrl) {
     img.classList.add('hidden');
   });
 
-  img.addEventListener('click', () => copyImageToClipboard(dataUrl));
+  img.addEventListener('click', () => {
+    copyImageToClipboard(thumbnailUrl, {
+      successToast: '图片已复制到剪贴板',
+      failureToast: '复制图片失败'
+    });
+  });
 
   wrapper.appendChild(placeholder);
   wrapper.appendChild(img);
@@ -169,9 +207,6 @@ function createMessageElement(msg) {
   const actionsEl = document.createElement('div');
   actionsEl.className = 'message-actions';
 
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'btn btn-secondary';
-
   if (msg.type === 'text') {
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content text';
@@ -179,18 +214,49 @@ function createMessageElement(msg) {
     messageEl.appendChild(headerEl);
     messageEl.appendChild(contentEl);
 
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-secondary';
     copyBtn.textContent = '复制';
     copyBtn.addEventListener('click', () => copyTextToClipboard(msg.content));
+    actionsEl.appendChild(copyBtn);
   } else {
-    const imageContent = createImageContent(msg.content);
+    const imageContent = createImageContent(msg);
     messageEl.appendChild(headerEl);
     messageEl.appendChild(imageContent);
 
-    copyBtn.textContent = '复制图片';
-    copyBtn.addEventListener('click', () => copyImageToClipboard(msg.content));
+    const imageData = getImageContent(msg.content);
+
+    if (imageData.hasOriginal) {
+      const copyThumbBtn = document.createElement('button');
+      copyThumbBtn.className = 'btn btn-secondary';
+      copyThumbBtn.textContent = '复制缩略图';
+      copyThumbBtn.addEventListener('click', () => {
+        copyImageToClipboard(imageData.thumbnail, {
+          successToast: '缩略图已复制到剪贴板',
+          failureToast: '复制缩略图失败'
+        });
+      });
+
+      const copyOriginalBtn = document.createElement('button');
+      copyOriginalBtn.className = 'btn btn-secondary';
+      copyOriginalBtn.textContent = '复制原图';
+      copyOriginalBtn.addEventListener('click', () => copyOriginalImageWithFallback(msg));
+      actionsEl.appendChild(copyThumbBtn);
+      actionsEl.appendChild(copyOriginalBtn);
+    } else {
+      const copyImageBtn = document.createElement('button');
+      copyImageBtn.className = 'btn btn-secondary';
+      copyImageBtn.textContent = '复制图片';
+      copyImageBtn.addEventListener('click', () => {
+        copyImageToClipboard(imageData.thumbnail, {
+          successToast: '图片已复制到剪贴板',
+          failureToast: '复制图片失败'
+        });
+      });
+      actionsEl.appendChild(copyImageBtn);
+    }
   }
 
-  actionsEl.appendChild(copyBtn);
   actionsEl.appendChild(deleteBtn);
   messageEl.appendChild(actionsEl);
   return messageEl;
@@ -452,7 +518,18 @@ async function copyTextToClipboard(text) {
   }
 }
 
-async function copyImageToClipboard(dataUrl) {
+async function copyImageToClipboard(dataUrl, options = {}) {
+  const {
+    successToast = '图片已复制到剪贴板',
+    failureToast = '复制图片失败，请尝试右键另存',
+    silentFailure = false
+  } = options;
+
+  if (!dataUrl) {
+    if (!silentFailure) showToast(failureToast);
+    return false;
+  }
+
   try {
     const response = await fetch(dataUrl);
     let blob = await response.blob();
@@ -481,24 +558,161 @@ async function copyImageToClipboard(dataUrl) {
       await navigator.clipboard.write([
         new ClipboardItem({ 'image/png': blob })
       ]);
-      showToast('图片已复制到剪贴板');
+      if (successToast) showToast(successToast);
+      return true;
     } else {
-      showToast('浏览器不支持复制图片，请右键另存');
+      if (!silentFailure) showToast('浏览器不支持复制图片，请右键另存');
+      return false;
     }
   } catch (error) {
     console.error('复制图片失败:', error);
-    showToast('复制图片失败，请尝试右键另存');
+    if (!silentFailure) showToast(failureToast);
+    return false;
+  }
+}
+
+async function fetchOriginalImageWithTimeout(id, timeoutMs = ORIGINAL_FETCH_TIMEOUT) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`/api/messages/${id}/image-original`, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      throw new Error(`request failed: ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data || typeof data.original !== 'string' || !data.original.startsWith('data:image/')) {
+      throw new Error('invalid original data');
+    }
+    return data.original;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function copyOriginalImageWithFallback(msg) {
+  const imageData = getImageContent(msg.content);
+  const thumbnail = imageData.thumbnail;
+  if (!thumbnail) {
+    showToast('当前消息缺少可复制的缩略图');
+    return;
+  }
+
+  try {
+    const original = await fetchOriginalImageWithTimeout(msg.id, ORIGINAL_FETCH_TIMEOUT);
+    const copiedOriginal = await copyImageToClipboard(original, {
+      successToast: '原图已复制到剪贴板',
+      silentFailure: true
+    });
+    if (copiedOriginal) {
+      return;
+    }
+    const copiedFallback = await copyImageToClipboard(thumbnail, { silentFailure: true });
+    showToast(copiedFallback ? '复制原图失败，已回退复制缩略图' : '复制原图失败，且回退缩略图复制失败');
+  } catch (error) {
+    console.error('获取原图失败:', error);
+    const copiedFallback = await copyImageToClipboard(thumbnail, { silentFailure: true });
+    if (error && error.name === 'AbortError') {
+      showToast(copiedFallback ? '复制原图超时，已回退复制缩略图' : '复制原图超时，且回退缩略图复制失败');
+      return;
+    }
+    showToast(copiedFallback ? '获取原图失败，已回退复制缩略图' : '获取原图失败，且回退缩略图复制失败');
+  }
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('read blob failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function loadImageElementFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('load image failed'));
+    };
+    img.src = url;
+  });
+}
+
+function getThumbnailCompressionConfig(sizeBytes) {
+  if (sizeBytes <= THUMBNAIL_NO_COMPRESS_MAX_BYTES) {
+    return null;
+  }
+
+  if (sizeBytes <= 1.5 * 1024 * 1024) {
+    return { maxEdge: 1920, quality: 0.96 };
+  }
+  if (sizeBytes <= 3 * 1024 * 1024) {
+    return { maxEdge: 1600, quality: 0.92 };
+  }
+  if (sizeBytes <= 6 * 1024 * 1024) {
+    return { maxEdge: 1360, quality: 0.88 };
+  }
+  if (sizeBytes <= 12 * 1024 * 1024) {
+    return { maxEdge: 1120, quality: 0.82 };
+  }
+  return { maxEdge: 960, quality: 0.78 };
+}
+
+async function createThumbnailDataUrl(blob) {
+  const config = getThumbnailCompressionConfig(blob.size);
+  if (!config) {
+    return blobToDataUrl(blob);
+  }
+
+  const img = await loadImageElementFromBlob(blob);
+  const maxEdge = Math.max(config.maxEdge, THUMBNAIL_MAX_EDGE);
+  const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+  const width = Math.max(1, Math.round(img.naturalWidth * scale));
+  const height = Math.max(1, Math.round(img.naturalHeight * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const mimeType = blob.type === 'image/png' ? 'image/png' : 'image/jpeg';
+  return canvas.toDataURL(mimeType, config.quality);
+}
+
+async function buildImagePayload(blob) {
+  const originalPromise = blobToDataUrl(blob);
+  const thumbnailPromise = createThumbnailDataUrl(blob);
+  const [thumbnail, original] = await Promise.all([thumbnailPromise, originalPromise]);
+  return { thumbnail, original };
+}
+
+async function processAndSendImageBlob(blob) {
+  setImageProcessing(true);
+  try {
+    const content = await buildImagePayload(blob);
+    await sendMessage('image', content);
+  } catch (error) {
+    showToast('图片处理或发送失败');
+    console.error(error);
+  } finally {
+    setImageProcessing(false);
   }
 }
 
 async function handleImageFiles(files) {
   for (const file of files) {
-    if (!file.type.startsWith('image/')) continue;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      await sendMessage('image', e.target.result);
-    };
-    reader.readAsDataURL(file);
+    if (!file || !file.type.startsWith('image/')) continue;
+    await processAndSendImageBlob(file);
   }
 }
 
@@ -511,11 +725,7 @@ async function pasteImage() {
         if (!type.startsWith('image/')) continue;
 
         const blob = await item.getType(type);
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-          await sendMessage('image', e.target.result);
-        };
-        reader.readAsDataURL(blob);
+        await processAndSendImageBlob(blob);
         return;
       }
     }

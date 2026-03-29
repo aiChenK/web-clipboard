@@ -28,6 +28,59 @@ function clampPageSize(limit) {
   return Math.min(Math.max(limit, 1), 100);
 }
 
+function isDataUrl(value) {
+  return typeof value === 'string' && value.startsWith('data:');
+}
+
+function normalizeImageContent(content) {
+  if (isDataUrl(content)) {
+    return { thumbnail: content, original: content };
+  }
+
+  if (content && typeof content === 'object') {
+    const thumbnail = isDataUrl(content.thumbnail) ? content.thumbnail : null;
+    const original = isDataUrl(content.original) ? content.original : null;
+    if (thumbnail || original) {
+      return {
+        thumbnail: thumbnail || original,
+        original: original || thumbnail
+      };
+    }
+  }
+
+  return null;
+}
+
+function extractOriginalImageContent(content) {
+  if (isDataUrl(content)) return content;
+  if (!content || typeof content !== 'object') return null;
+  if (isDataUrl(content.original)) return content.original;
+  if (isDataUrl(content.thumbnail)) return content.thumbnail;
+  return null;
+}
+
+function toPublicMessage(message) {
+  if (message.type !== 'image') {
+    return message;
+  }
+
+  const normalized = normalizeImageContent(message.content);
+  if (!normalized) {
+    return {
+      ...message,
+      content: { thumbnail: '' }
+    };
+  }
+
+  return {
+    ...message,
+    content: {
+      thumbnail: normalized.thumbnail,
+      hasOriginal: normalized.original !== normalized.thumbnail
+    }
+  };
+}
+
 function getMessagesPage({ before, limit }) {
   const pageLimit = clampPageSize(limit);
   const source = Number.isFinite(before)
@@ -71,7 +124,11 @@ app.get('/api/messages', (req, res) => {
   const before = Number(req.query.before);
   const limit = Number(req.query.limit);
   const page = getMessagesPage({ before, limit });
-  res.json({ ...page, expireHours: EXPIRE_HOURS });
+  res.json({
+    ...page,
+    messages: page.messages.map(toPublicMessage),
+    expireHours: EXPIRE_HOURS
+  });
 });
 
 app.post('/api/messages', (req, res) => {
@@ -87,13 +144,39 @@ app.post('/api/messages', (req, res) => {
     content,
     timestamp: Date.now()
   };
+
+  if (type === 'image') {
+    const normalized = normalizeImageContent(content);
+    if (!normalized) {
+      return res.status(400).json({ error: '图片内容格式错误' });
+    }
+    message.content = normalized;
+  }
   
   messages.push(message);
   lastActivity = Date.now();
   
-  io.emit('message-new', message);
+  io.emit('message-new', toPublicMessage(message));
   
-  res.json({ success: true, message });
+  res.json({ success: true, message: toPublicMessage(message) });
+});
+
+app.get('/api/messages/:id/image-original', (req, res) => {
+  const { id } = req.params;
+  const message = messages.find((item) => item.id === id);
+  if (!message) {
+    return res.status(404).json({ error: '消息不存在' });
+  }
+  if (message.type !== 'image') {
+    return res.status(400).json({ error: '该消息不是图片' });
+  }
+
+  const original = extractOriginalImageContent(message.content);
+  if (!original) {
+    return res.status(404).json({ error: '原图不存在' });
+  }
+
+  return res.json({ id: message.id, original });
 });
 
 app.delete('/api/messages/:id', (req, res) => {
@@ -128,7 +211,10 @@ io.on('connection', (socket) => {
     before: Number.NaN,
     limit: SOCKET_SYNC_LIMIT
   });
-  socket.emit('sync', initialPage);
+  socket.emit('sync', {
+    ...initialPage,
+    messages: initialPage.messages.map(toPublicMessage)
+  });
   
   socket.on('disconnect', () => {
     console.log('用户断开连接:', socket.id);

@@ -218,9 +218,14 @@ header h1 {
 .message-actions {
   margin-top: 8px;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.message-actions .message-delete {
+  margin-left: auto;
 }
 
 .message-actions .btn {
@@ -272,8 +277,16 @@ header h1 {
 
 .action-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
   margin-top: 10px;
+}
+
+.processing-state {
+  margin-right: auto;
+  font-size: 0.8rem;
+  color: #666;
 }
 
 .btn {
