@@ -1,15 +1,17 @@
 # Web Clipboard
 
-跨设备剪贴板同步工具，支持文字和图片消息的实时同步。
+跨设备剪贴板同步工具，支持文字、图片和文件消息的实时同步。
 
 ## 功能特性
 
 - 密码保护访问
 - 聊天框式消息展示
 - WebSocket 实时同步
-- 一键复制文本/图片
+- 文件上传与下载
+- 一键复制文本/图片（支持动态拉取图片原图）
 - 消息删除与清空
 - 自动过期清理
+- 磁盘孤儿文件自动清理（并删除空日期目录）
 
 ## 快速开始
 
@@ -20,7 +22,13 @@
 docker pull aichenk/web-clipboard:latest
 
 # 运行容器
-docker run -d -p 3000:3000 -e ACCESS_PASSWORD=你的密码 --name web-clipboard aichenk/web-clipboard:latest
+docker run -d \
+  -p 3000:3000 \
+  -e ACCESS_PASSWORD=你的密码 \
+  -e DATA_FILE=/app/data/messages.json \
+  -v web-clipboard-data:/app/data \
+  --name web-clipboard \
+  aichenk/web-clipboard:latest
 ```
 
 ### Docker Compose
@@ -35,7 +43,15 @@ services:
     environment:
       - ACCESS_PASSWORD=你的密码
       - EXPIRE_HOURS=168
+      - DATA_FILE=/app/data/messages.json
+      - UPLOAD_ROOT=/app/data/uploads
+      - FILE_CLEANUP_INTERVAL_MINUTES=30
     restart: unless-stopped
+    volumes:
+      - web-clipboard-data:/app/data
+
+volumes:
+  web-clipboard-data:
 ```
 
 ### 本地运行
@@ -57,16 +73,30 @@ npm start
 | `EXPIRE_HOURS` | 数据过期时间（小时） | `168`（7天） |
 | `MESSAGE_PAGE_SIZE` | 分页加载每页数量 | `30` |
 | `SOCKET_SYNC_LIMIT` | Socket 首次同步数量 | `20` |
+| `DATA_FILE` | 服务端消息持久化文件路径 | `./data/messages.json` |
+| `STORAGE_ROOT` | 数据根目录（默认包含消息/上传） | `./data` |
+| `UPLOAD_ROOT` | 上传文件根目录 | `./data/uploads` |
+| `FILE_CLEANUP_INTERVAL_MINUTES` | 孤儿文件清理间隔（分钟） | `30` |
 
 ## 使用说明
 
 1. 打开网页并输入访问密码。
 2. 在输入框中输入文本，按 Enter 或点击“发送”。
-3. 可通过“粘贴图片”或上传按钮发送图片。
-4. 鼠标悬停消息可显示删除按钮。
-5. 点击“复制/复制图片”可快速复制内容。
+3. 可通过“粘贴图片”或上传按钮发送图片，可通过 📎 上传文件。
+4. 图片消息支持“复制缩略图 / 复制原图（动态请求）”。
+5. 文件消息支持下载。
+6. 鼠标悬停消息可显示删除按钮。
 
 ## 更新日志
+
+### 1.1.0（2026-03-30）
+
+- 新增文件上传能力，文件消息支持下载。
+- 新增服务端消息持久化：重启服务后仍可恢复消息数据。
+- 图片原图和文件统一落盘，消息仅保存元数据。
+- 图片与文件按日期目录存储（`YYYY-MM-DD`）。
+- 保留“复制原图”动态请求能力（按需读取原图并返回）。
+- 新增磁盘孤儿文件定时清理，并自动删除空日期目录。
 
 ### 1.0.5（2026-03-29）
 

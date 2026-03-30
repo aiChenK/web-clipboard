@@ -186,6 +186,32 @@ header h1 {
   color: #333;
 }
 
+.message-content.file {
+  border: 1px solid #ececec;
+  background: #fafafa;
+  border-radius: 6px;
+  padding: 6px 8px;
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.25;
+}
+
+.file-name {
+  font-size: 0.85rem;
+  color: #333;
+  font-weight: 600;
+  word-break: break-all;
+  line-height: 1.2;
+}
+
+.file-meta {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: #777;
+}
+
 .message-content.image img {
   max-width: 100%;
   max-height: 300px;

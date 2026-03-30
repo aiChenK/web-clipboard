@@ -16,6 +16,7 @@ const textInput = document.getElementById('text-input');
 const sendTextBtn = document.getElementById('send-text');
 const pasteTextBtn = document.getElementById('paste-text');
 const imageInput = document.getElementById('image-input');
+const fileInput = document.getElementById('file-input');
 const pasteImageBtn = document.getElementById('paste-image');
 const clearAllBtn = document.getElementById('clear-all');
 const logoutBtn = document.getElementById('logout-btn');
@@ -75,6 +76,18 @@ function getImageContent(content) {
   return { thumbnail: '', hasOriginal: false };
 }
 
+function getFileContent(content) {
+  if (!content || typeof content !== 'object') {
+    return { name: '未知文件', size: 0, mimeType: '', url: '' };
+  }
+  return {
+    name: typeof content.name === 'string' ? content.name : '未知文件',
+    size: Number.isFinite(content.size) ? content.size : 0,
+    mimeType: typeof content.mimeType === 'string' ? content.mimeType : '',
+    url: typeof content.url === 'string' ? content.url : ''
+  };
+}
+
 function setImageProcessing(active) {
   imageProcessingCount += active ? 1 : -1;
   imageProcessingCount = Math.max(imageProcessingCount, 0);
@@ -128,7 +141,7 @@ function renderEmptyState() {
   messagesList.innerHTML = `
     <div class="empty-state">
       <p>暂无消息</p>
-      <p style="font-size: 0.8rem; margin-top: 8px;">发送文字或图片开始使用</p>
+      <p style="font-size: 0.8rem; margin-top: 8px;">发送文字、图片或文件开始使用</p>
     </div>
   `;
   updateMessageCount();
@@ -221,7 +234,7 @@ function createMessageElement(msg) {
     copyBtn.textContent = '复制';
     copyBtn.addEventListener('click', () => copyTextToClipboard(msg.content));
     actionsEl.appendChild(copyBtn);
-  } else {
+  } else if (msg.type === 'image') {
     const imageContent = createImageContent(msg);
     messageEl.appendChild(headerEl);
     messageEl.appendChild(imageContent);
@@ -257,11 +270,43 @@ function createMessageElement(msg) {
       });
       actionsEl.appendChild(copyImageBtn);
     }
+  } else if (msg.type === 'file') {
+    const fileData = getFileContent(msg.content);
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content file';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'file-name';
+    nameEl.textContent = fileData.name;
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'file-meta';
+    metaEl.textContent = `${formatFileSize(fileData.size)}${fileData.mimeType ? ` · ${fileData.mimeType}` : ''}`;
+
+    contentEl.appendChild(nameEl);
+    contentEl.appendChild(metaEl);
+    messageEl.appendChild(headerEl);
+    messageEl.appendChild(contentEl);
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'btn btn-secondary';
+    downloadBtn.textContent = '下载文件';
+    downloadBtn.addEventListener('click', () => {
+      window.open(`/api/messages/${msg.id}/file-download`, '_blank', 'noopener');
+    });
+    actionsEl.appendChild(downloadBtn);
   }
 
   actionsEl.appendChild(deleteBtn);
   messageEl.appendChild(actionsEl);
   return messageEl;
+}
+
+function formatFileSize(size) {
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function renderMessages({ scrollBottom = false } = {}) {
@@ -449,6 +494,11 @@ async function sendMessage(type, content) {
   }
 
   if (type === 'image' && !content) {
+    return;
+  }
+
+  if (type === 'file' && (!content || !content.dataUrl)) {
+    showToast('文件内容不能为空');
     return;
   }
 
@@ -740,6 +790,26 @@ async function handleImageFiles(files) {
   }
 }
 
+async function fileToDataUrl(file) {
+  return blobToDataUrl(file);
+}
+
+async function handleFileUpload(files) {
+  for (const file of files) {
+    if (!file) continue;
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      await sendMessage('file', {
+        name: file.name,
+        dataUrl
+      });
+    } catch (error) {
+      showToast(`文件上传失败: ${file.name || '未知文件'}`);
+      console.error(error);
+    }
+  }
+}
+
 async function pasteImage() {
   try {
     const items = await navigator.clipboard.read();
@@ -797,6 +867,10 @@ logoutBtn.addEventListener('click', () => logout(true));
 imageInput.addEventListener('change', (e) => {
   handleImageFiles(e.target.files);
   imageInput.value = '';
+});
+fileInput.addEventListener('change', (e) => {
+  handleFileUpload(e.target.files);
+  fileInput.value = '';
 });
 
 messagesList.addEventListener('scroll', () => {
