@@ -23,6 +23,7 @@ const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, 'data');
 const DATA_FILE = process.env.DATA_FILE || path.join(STORAGE_ROOT, 'messages.json');
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(STORAGE_ROOT, 'uploads');
 const FILE_CLEANUP_INTERVAL_MINUTES = Number.parseInt(process.env.FILE_CLEANUP_INTERVAL_MINUTES, 10) || 30;
+const APP_VERSION = process.env.APP_VERSION || process.env.npm_package_version || require('./package.json').version || '1.0';
 
 let messages = [];
 let lastActivity = Date.now();
@@ -564,8 +565,7 @@ app.get('/api/auth/status', (req, res) => {
 });
 
 app.get('/api/version', (req, res) => {
-  const version = process.env.npm_package_version || 'unknow';
-  res.json({ version });
+  res.json({ version: APP_VERSION });
 });
 
 app.get('/api/messages', (req, res) => {

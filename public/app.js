@@ -593,14 +593,11 @@ async function verifyPassword(password) {
     const data = await response.json();
 
     if (data.success) {
-      isAuthenticated = true;
       // 无密码模式不缓存密码
       if (!data.noPassword) {
         localStorage.setItem('web-clipboard-password', password);
       }
-      authSection.classList.add('hidden');
-      chatSection.classList.remove('hidden');
-      loadInitialMessages();
+      enterChatMode();
       return;
     }
 
