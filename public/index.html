@@ -11,7 +11,7 @@
   <div class="container">
     <header>
       <h1>📋 Web Clipboard</h1>
-      <p class="subtitle">跨设备剪贴板同步工具</p>
+      <p class="subtitle">跨设备剪贴板同步工具 <span id="version" class="version-badge"></span></p>
     </header>
 
     <div id="auth-section" class="section">
@@ -24,28 +24,41 @@
     </div>
 
     <div id="chat-section" class="section hidden">
-      <div class="chat-container">
-        <div id="messages-list" class="messages-list"></div>
-        
-        <div class="input-area">
-          <div class="input-row">
-            <textarea id="text-input" placeholder="输入文字消息..." rows="1"></textarea>
-            <button id="send-text" class="btn btn-primary">发送</button>
-            <button id="paste-text" class="btn btn-secondary" title="从剪贴板粘贴">📋</button>
-            <label class="btn btn-secondary upload-btn" title="发送图片">
-              🖼️
-              <input type="file" id="image-input" accept="image/*" multiple hidden>
-            </label>
-            <label class="btn btn-secondary upload-btn" title="上传文件">
-              📎
-              <input type="file" id="file-input" multiple hidden>
-            </label>
+      <div class="tabs">
+        <button class="tab active" data-tab="messages">消息</button>
+        <button class="tab" data-tab="favorites">收藏</button>
+      </div>
+
+      <div class="tab-panel active" data-panel="messages">
+        <div class="chat-container">
+          <div id="messages-list" class="messages-list"></div>
+
+          <div class="input-area">
+            <div class="input-row">
+              <textarea id="text-input" placeholder="输入文字消息..." rows="1"></textarea>
+              <button id="send-text" class="btn btn-primary">发送</button>
+              <button id="paste-text" class="btn btn-secondary" title="从剪贴板粘贴">📋</button>
+              <label class="btn btn-secondary upload-btn" title="发送图片">
+                🖼️
+                <input type="file" id="image-input" accept="image/*" multiple hidden>
+              </label>
+              <label class="btn btn-secondary upload-btn" title="上传文件">
+                📎
+                <input type="file" id="file-input" multiple hidden>
+              </label>
+            </div>
+            <div class="action-row">
+              <span id="image-processing-state" class="processing-state hidden" aria-live="polite">图片处理中...</span>
+              <button id="paste-image" class="btn btn-small btn-secondary">粘贴图片</button>
+              <button id="clear-all" class="btn btn-small btn-danger">清空全部</button>
+            </div>
           </div>
-          <div class="action-row">
-            <span id="image-processing-state" class="processing-state hidden" aria-live="polite">图片处理中...</span>
-            <button id="paste-image" class="btn btn-small btn-secondary">粘贴图片</button>
-            <button id="clear-all" class="btn btn-small btn-danger">清空全部</button>
-          </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="favorites">
+        <div class="chat-container favorites-container">
+          <div id="favorites-list" class="messages-list"></div>
         </div>
       </div>
 

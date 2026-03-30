@@ -221,6 +221,8 @@ function normalizePersistedState(state) {
       if (typeof message.type !== 'string') return null;
       if (!Number.isFinite(message.timestamp)) return null;
       if (!['text', 'image', 'file'].includes(message.type)) return null;
+      // 添加 favorite 字段，默认 false
+      message.favorite = Boolean(message.favorite);
       return message;
     })
     .filter(Boolean);
@@ -293,54 +295,48 @@ function schedulePersist() {
 }
 
 function toPublicMessage(message) {
+  const result = { ...message, favorite: Boolean(message.favorite) };
+
   if (message.type === 'image') {
     const content = message.content;
 
     if (content && typeof content === 'object' && typeof content.thumbnailPath === 'string') {
       const thumbnailUrl = toUploadUrl(content.thumbnailPath);
-      return {
-        ...message,
-        content: {
-          thumbnail: thumbnailUrl,
-          hasOriginal: Boolean(content.hasOriginal),
-          mimeType: content.thumbnailMimeType || content.originalMimeType || 'image/png'
-        }
+      result.content = {
+        thumbnail: thumbnailUrl,
+        hasOriginal: Boolean(content.hasOriginal),
+        mimeType: content.thumbnailMimeType || content.originalMimeType || 'image/png'
       };
+      return result;
     }
 
     const legacy = normalizeImageIncomingContent(content);
     if (legacy) {
-      return {
-        ...message,
-        content: {
-          thumbnail: legacy.thumbnail,
-          hasOriginal: legacy.original !== legacy.thumbnail
-        }
+      result.content = {
+        thumbnail: legacy.thumbnail,
+        hasOriginal: legacy.original !== legacy.thumbnail
       };
+      return result;
     }
 
-    return {
-      ...message,
-      content: { thumbnail: '', hasOriginal: false }
-    };
+    result.content = { thumbnail: '', hasOriginal: false };
+    return result;
   }
 
   if (message.type === 'file') {
     const content = message.content;
     if (content && typeof content === 'object' && typeof content.filePath === 'string') {
-      return {
-        ...message,
-        content: {
-          name: content.name,
-          size: content.size,
-          mimeType: content.mimeType,
-          url: toUploadUrl(content.filePath)
-        }
+      result.content = {
+        name: content.name,
+        size: content.size,
+        mimeType: content.mimeType,
+        url: toUploadUrl(content.filePath)
       };
+      return result;
     }
   }
 
-  return message;
+  return result;
 }
 
 function getMessagesPage({ before, limit }) {
@@ -432,11 +428,19 @@ function cleanupExpiredData() {
     return;
   }
 
-  const expiredMessages = messages;
-  messages = [];
+  // 分离收藏和非收藏消息
+  const favoriteMessages = messages.filter((msg) => msg.favorite);
+  const expiredMessages = messages.filter((msg) => !msg.favorite);
+
+  if (expiredMessages.length === 0) {
+    return;
+  }
+
+  messages = favoriteMessages; // 只保留收藏消息
   lastActivity = now;
   schedulePersist();
 
+  // 只删除非收藏消息的文件
   Promise.allSettled(expiredMessages.map((msg) => deleteMessageFiles(msg))).catch((error) => {
     console.error('清理过期文件失败:', error);
   });
@@ -557,6 +561,11 @@ app.post('/api/auth', (req, res) => {
 
 app.get('/api/auth/status', (req, res) => {
   res.json({ requirePassword: Boolean(ACCESS_PASSWORD) });
+});
+
+app.get('/api/version', (req, res) => {
+  const version = process.env.npm_package_version || 'unknow';
+  res.json({ version });
 });
 
 app.get('/api/messages', (req, res) => {
@@ -696,16 +705,63 @@ app.delete('/api/messages/:id', async (req, res) => {
 });
 
 app.post('/api/messages/clear', async (req, res) => {
-  const removedMessages = messages;
-  messages = [];
+  // 分离收藏和非收藏消息
+  const favoriteMessages = messages.filter((msg) => msg.favorite);
+  const removedMessages = messages.filter((msg) => !msg.favorite);
+
+  messages = favoriteMessages; // 只保留收藏消息
   lastActivity = Date.now();
   schedulePersist();
 
+  // 只删除非收藏消息的文件
   await Promise.allSettled(removedMessages.map((msg) => deleteMessageFiles(msg)));
 
-  io.emit('messages-clear');
+  io.emit('messages-clear', { favoriteCount: favoriteMessages.length });
 
-  return res.json({ success: true });
+  return res.json({ success: true, favoriteCount: favoriteMessages.length });
+});
+
+// 获取收藏消息列表
+app.get('/api/favorites', (req, res) => {
+  const favorites = messages.filter((msg) => msg.favorite);
+  res.json({
+    messages: favorites.map(toPublicMessage),
+    total: favorites.length
+  });
+});
+
+// 收藏消息
+app.post('/api/messages/:id/favorite', (req, res) => {
+  const { id } = req.params;
+  const message = messages.find((item) => item.id === id);
+  if (!message) {
+    return res.status(404).json({ error: '消息不存在' });
+  }
+
+  message.favorite = true;
+  schedulePersist();
+
+  const publicMessage = toPublicMessage(message);
+  io.emit('message-favorite', { id, favorite: true, message: publicMessage });
+
+  return res.json({ success: true, message: publicMessage });
+});
+
+// 取消收藏
+app.delete('/api/messages/:id/favorite', (req, res) => {
+  const { id } = req.params;
+  const message = messages.find((item) => item.id === id);
+  if (!message) {
+    return res.status(404).json({ error: '消息不存在' });
+  }
+
+  message.favorite = false;
+  schedulePersist();
+
+  const publicMessage = toPublicMessage(message);
+  io.emit('message-favorite', { id, favorite: false, message: publicMessage });
+
+  return res.json({ success: true, message: publicMessage });
 });
 
 io.on('connection', (socket) => {

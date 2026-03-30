@@ -12,7 +12,7 @@ body {
 }
 
 .container {
-  max-width: 800px;
+  max-width: 1000px;
   margin: 0 auto;
   background: white;
   border-radius: 16px;
@@ -21,7 +21,7 @@ body {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 40px);
-  max-height: 700px;
+  max-height: 1000px;
 }
 
 header {
@@ -40,6 +40,16 @@ header h1 {
 .subtitle {
   opacity: 0.9;
   font-size: 0.875rem;
+}
+
+.version-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  margin-left: 8px;
+  font-weight: 500;
 }
 
 .section {
@@ -95,11 +105,59 @@ header h1 {
   overflow: hidden;
 }
 
+.tabs {
+  display: flex;
+  background: #f1f3f5;
+  padding: 6px;
+  border-bottom: 1px solid #e9ecef;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.tab {
+  padding: 8px 20px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #495057;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 1;
+  text-align: center;
+}
+
+.tab:hover {
+  color: #212529;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.tab.active {
+  color: #667eea;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.tab-panel {
+  display: none;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
 .chat-container {
   display: flex;
   flex-direction: column;
   flex: 1;
   overflow: hidden;
+}
+
+.favorites-container {
+  padding: 15px;
 }
 
 .messages-list {
@@ -143,8 +201,11 @@ header h1 {
   }
 }
 
-.message:hover .message-delete {
-  opacity: 1;
+
+
+.message.favorited {
+  border: 2px solid #667eea;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
 }
 
 .message-header {
@@ -159,20 +220,46 @@ header h1 {
   color: #999;
 }
 
-.message-delete {
+.message-favorite-action {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.message-favorite-action.active {
+  background: #fff9db !important;
+  color: #f08c00 !important;
+  border-color: #ffe066 !important;
+}
+
+.message-favorite-action.active:hover {
+  background: #fff3bf !important;
+}
+
+.message-delete-action {
   background: #ff4757;
   color: white;
   border: none;
-  border-radius: 4px;
-  padding: 2px 8px;
-  font-size: 0.7rem;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 0.75rem;
   cursor: pointer;
+  transition: opacity 0.2s, transform 0.2s, background-color 0.2s;
+  margin-left: auto;
+  font-weight: 500;
   opacity: 0;
-  transition: opacity 0.2s;
+  pointer-events: none;
 }
 
-.message-delete:hover {
+.message:hover .message-delete-action {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-delete-action:hover {
   background: #ff3344;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(255, 71, 87, 0.3);
 }
 
 .message-content {
@@ -250,7 +337,7 @@ header h1 {
   gap: 8px;
 }
 
-.message-actions .message-delete {
+.message-actions .message-delete-action {
   margin-left: auto;
 }
 

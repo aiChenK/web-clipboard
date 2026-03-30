@@ -12,6 +12,7 @@ const passwordInput = document.getElementById('password-input');
 const authBtn = document.getElementById('auth-btn');
 const authError = document.getElementById('auth-error');
 const messagesList = document.getElementById('messages-list');
+const favoritesList = document.getElementById('favorites-list');
 const textInput = document.getElementById('text-input');
 const sendTextBtn = document.getElementById('send-text');
 const pasteTextBtn = document.getElementById('paste-text');
@@ -25,8 +26,10 @@ const messageCount = document.getElementById('message-count');
 const expireInfo = document.getElementById('expire-info');
 const toastEl = document.getElementById('toast');
 const imageProcessingState = document.getElementById('image-processing-state');
+const tabs = document.querySelectorAll('.tab');
 
 let messages = [];
+let favorites = [];
 let hasMoreMessages = false;
 let initialLoaded = false;
 let isInitialLoading = false;
@@ -35,6 +38,7 @@ let isReconnectRefreshing = false;
 let imageProcessingCount = 0;
 let isAuthenticated = false;
 let requirePassword = true;
+let currentTab = 'messages';
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -51,7 +55,7 @@ const imageObserver = 'IntersectionObserver' in window
         }
         imageObserver.unobserve(img);
       });
-    }, { root: messagesList, rootMargin: '200px' })
+    }, { rootMargin: '200px' })
   : null;
 
 function showToast(message) {
@@ -201,9 +205,12 @@ function createImageContent(msg) {
   return wrapper;
 }
 
-function createMessageElement(msg) {
+function createMessageElement(msg, isFavoritesView = false) {
   const messageEl = document.createElement('div');
   messageEl.className = 'message';
+  if (msg.favorite) {
+    messageEl.classList.add('favorited');
+  }
   messageEl.dataset.id = msg.id;
 
   const headerEl = document.createElement('div');
@@ -213,15 +220,24 @@ function createMessageElement(msg) {
   timeEl.className = 'message-time';
   timeEl.textContent = formatTime(msg.timestamp);
 
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = 'message-delete';
-  deleteBtn.textContent = '删除';
-  deleteBtn.addEventListener('click', () => deleteMessage(msg.id));
-
   headerEl.appendChild(timeEl);
 
   const actionsEl = document.createElement('div');
   actionsEl.className = 'message-actions';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'message-delete-action';
+  deleteBtn.textContent = '删除';
+  deleteBtn.addEventListener('click', () => deleteMessage(msg.id));
+
+  const favoriteBtn = document.createElement('button');
+  favoriteBtn.className = 'btn btn-secondary message-favorite-action';
+  if (msg.favorite) {
+    favoriteBtn.classList.add('active');
+  }
+  favoriteBtn.textContent = msg.favorite ? '★ 已收藏' : '☆ 收藏';
+  favoriteBtn.title = msg.favorite ? '取消收藏' : '加入收藏';
+  favoriteBtn.addEventListener('click', () => toggleFavorite(msg.id, !msg.favorite));
 
   if (msg.type === 'text') {
     const contentEl = document.createElement('div');
@@ -297,6 +313,7 @@ function createMessageElement(msg) {
     actionsEl.appendChild(downloadBtn);
   }
 
+  actionsEl.appendChild(favoriteBtn);
   actionsEl.appendChild(deleteBtn);
   messageEl.appendChild(actionsEl);
   return messageEl;
@@ -371,12 +388,82 @@ function enterChatMode() {
   authSection.classList.add('hidden');
   chatSection.classList.remove('hidden');
   loadInitialMessages();
+  loadFavorites();
+  loadVersion();
+}
+
+async function loadVersion() {
+  try {
+    const response = await fetch('/api/version');
+    if (!response.ok) return;
+    const data = await response.json();
+    const versionEl = document.getElementById('version');
+    if (versionEl && data.version) {
+      versionEl.textContent = `v${data.version}`;
+    }
+  } catch (error) {
+    console.error('加载版本号失败:', error);
+  }
+}
+
+function switchTab(tabName) {
+  currentTab = tabName;
+  tabs.forEach((tab) => {
+    tab.classList.toggle('active', tab.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.tab-panel').forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.panel === tabName);
+  });
+  if (tabName === 'favorites') {
+    renderFavorites();
+  }
+}
+
+async function loadFavorites() {
+  try {
+    const response = await fetch('/api/favorites');
+    if (!response.ok) return;
+    const data = await response.json();
+    favorites = data.messages || [];
+  } catch (error) {
+    console.error('加载收藏失败:', error);
+  }
+}
+
+async function toggleFavorite(id, isFavorite) {
+  try {
+    const method = isFavorite ? 'POST' : 'DELETE';
+    await fetch(`/api/messages/${id}/favorite`, { method });
+  } catch (error) {
+    showToast('收藏操作失败');
+    console.error(error);
+  }
+}
+
+function renderFavorites() {
+  if (favorites.length === 0) {
+    favoritesList.innerHTML = `
+      <div class="empty-state">
+        <p>暂无收藏</p>
+        <p style="font-size: 0.8rem; margin-top: 8px;">点击消息旁的 ☆ 收藏重要内容</p>
+      </div>
+    `;
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+  favorites.forEach((msg) => {
+    fragment.appendChild(createMessageElement(msg, true));
+  });
+  favoritesList.innerHTML = '';
+  favoritesList.appendChild(fragment);
 }
 
 function logout(showMessage = true) {
   localStorage.removeItem('web-clipboard-password');
   isAuthenticated = false;
   messages = [];
+  favorites = [];
   hasMoreMessages = false;
   initialLoaded = false;
   isInitialLoading = false;
@@ -902,6 +989,10 @@ pasteImageBtn.addEventListener('click', pasteImage);
 clearAllBtn.addEventListener('click', clearAllMessages);
 logoutBtn.addEventListener('click', () => logout(true));
 
+tabs.forEach((tab) => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
 imageInput.addEventListener('change', (e) => {
   handleImageFiles(e.target.files);
   imageInput.value = '';
@@ -962,14 +1053,52 @@ socket.on('message-new', (msg) => {
 socket.on('message-delete', (id) => {
   if (!isAuthenticated) return;
   messages = messages.filter((m) => m.id !== id);
+  favorites = favorites.filter((f) => f.id !== id);
   renderMessages();
+  if (currentTab === 'favorites') {
+    renderFavorites();
+  }
 });
 
-socket.on('messages-clear', () => {
+socket.on('messages-clear', (data) => {
   if (!isAuthenticated) return;
-  messages = [];
+  // 只清空非收藏消息，保留收藏消息
+  messages = messages.filter((m) => m.favorite);
   hasMoreMessages = false;
   renderMessages();
+  if (currentTab === 'favorites') {
+    renderFavorites();
+  }
+  if (data && data.favoriteCount > 0) {
+    showToast(`已清空，保留 ${data.favoriteCount} 条收藏`);
+  }
+});
+
+socket.on('message-favorite', (data) => {
+  if (!isAuthenticated) return;
+  const { id, favorite, message } = data;
+
+  // 更新 messages 中的消息
+  const msgIndex = messages.findIndex((m) => m.id === id);
+  if (msgIndex !== -1) {
+    messages[msgIndex].favorite = favorite;
+  }
+
+  // 更新 favorites 列表
+  if (favorite) {
+    const favMsg = message || messages.find((m) => m.id === id);
+    if (favMsg && !favorites.find((f) => f.id === id)) {
+      favorites.push(favMsg);
+    }
+  } else {
+    favorites = favorites.filter((f) => f.id !== id);
+  }
+
+  // 重新渲染
+  renderMessages();
+  if (currentTab === 'favorites') {
+    renderFavorites();
+  }
 });
 
 checkAuth();

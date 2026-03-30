@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find C:/projects/aichenk/web-clipboard -type f -name *.js ! -path */node_modules/*)",
+      "Bash(npm start:*)",
+      "Bash(node --check server.js)",
+      "Bash(curl:*)"
+    ]
+  }
+}
