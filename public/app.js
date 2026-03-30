@@ -34,6 +34,7 @@ let isLoadingOlder = false;
 let isReconnectRefreshing = false;
 let imageProcessingCount = 0;
 let isAuthenticated = false;
+let requirePassword = true;
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -339,10 +340,37 @@ function scrollToBottom() {
 }
 
 function checkAuth() {
-  const savedPassword = localStorage.getItem('web-clipboard-password');
-  if (savedPassword) {
-    verifyPassword(savedPassword);
-  }
+  // 先检查是否需要密码
+  fetch('/api/auth/status')
+    .then((res) => res.json())
+    .then((data) => {
+      requirePassword = data.requirePassword;
+      if (!requirePassword) {
+        // 无密码模式，直接进入
+        enterChatMode();
+        return;
+      }
+      // 有密码模式，检查本地缓存
+      const savedPassword = localStorage.getItem('web-clipboard-password');
+      if (savedPassword) {
+        verifyPassword(savedPassword);
+      }
+    })
+    .catch((error) => {
+      console.error('获取认证状态失败:', error);
+      // 降级处理：假设需要密码
+      const savedPassword = localStorage.getItem('web-clipboard-password');
+      if (savedPassword) {
+        verifyPassword(savedPassword);
+      }
+    });
+}
+
+function enterChatMode() {
+  isAuthenticated = true;
+  authSection.classList.add('hidden');
+  chatSection.classList.remove('hidden');
+  loadInitialMessages();
 }
 
 function logout(showMessage = true) {
@@ -355,13 +383,20 @@ function logout(showMessage = true) {
   isLoadingOlder = false;
   isReconnectRefreshing = false;
   setTopLoading(false);
-  authSection.classList.remove('hidden');
-  chatSection.classList.add('hidden');
-  authError.classList.add('hidden');
-  passwordInput.value = '';
-  passwordInput.focus();
+
+  if (requirePassword) {
+    authSection.classList.remove('hidden');
+    chatSection.classList.add('hidden');
+    authError.classList.add('hidden');
+    passwordInput.value = '';
+    passwordInput.focus();
+  } else {
+    // 无密码模式，直接重新进入
+    enterChatMode();
+  }
+
   renderEmptyState();
-  if (showMessage) {
+  if (showMessage && requirePassword) {
     showToast('已退出登录');
   }
 }
@@ -472,7 +507,10 @@ async function verifyPassword(password) {
 
     if (data.success) {
       isAuthenticated = true;
-      localStorage.setItem('web-clipboard-password', password);
+      // 无密码模式不缓存密码
+      if (!data.noPassword) {
+        localStorage.setItem('web-clipboard-password', password);
+      }
       authSection.classList.add('hidden');
       chatSection.classList.remove('hidden');
       loadInitialMessages();

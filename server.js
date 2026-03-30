@@ -14,7 +14,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
-const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || 'aichenk';
+const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || '';
 const EXPIRE_HOURS = Number.parseInt(process.env.EXPIRE_HOURS, 10) || 168;
 const MESSAGE_PAGE_SIZE = Number.parseInt(process.env.MESSAGE_PAGE_SIZE, 10) || 30;
 const SOCKET_SYNC_LIMIT = Number.parseInt(process.env.SOCKET_SYNC_LIMIT, 10) || 20;
@@ -543,11 +543,20 @@ app.use(express.urlencoded({ limit: '100mb', extended: true }));
 app.post('/api/auth', (req, res) => {
   const { password } = req.body;
 
+  // 无密码模式：直接通过
+  if (!ACCESS_PASSWORD) {
+    return res.json({ success: true, noPassword: true });
+  }
+
   if (password === ACCESS_PASSWORD) {
     res.json({ success: true });
   } else {
     res.status(401).json({ success: false, error: '密码错误' });
   }
+});
+
+app.get('/api/auth/status', (req, res) => {
+  res.json({ requirePassword: Boolean(ACCESS_PASSWORD) });
 });
 
 app.get('/api/messages', (req, res) => {
@@ -726,7 +735,7 @@ async function start() {
 
   server.listen(PORT, () => {
     console.log(`服务器运行在 http://localhost:${PORT}`);
-    console.log(`访问密码: ${ACCESS_PASSWORD}`);
+    console.log(`密码保护: ${ACCESS_PASSWORD ? '已启用' : '未启用（无密码模式）'}`);
     console.log(`数据过期时间: ${EXPIRE_HOURS} 小时`);
     console.log(`消息持久化文件: ${DATA_FILE}`);
     console.log(`上传目录: ${UPLOAD_ROOT}`);
