@@ -27,6 +27,17 @@ const expireInfo = document.getElementById('expire-info');
 const toastEl = document.getElementById('toast');
 const imageProcessingState = document.getElementById('image-processing-state');
 const tabs = document.querySelectorAll('.tab');
+const dropZone = document.getElementById('drop-zone');
+const dropOverlay = document.getElementById('drop-overlay');
+const uploadProgressContainer = document.getElementById('upload-progress-container');
+const uploadProgressFill = document.getElementById('upload-progress-fill');
+const uploadProgressText = document.getElementById('upload-progress-text');
+const uploadProgressPercent = document.getElementById('upload-progress-percent');
+const uploadProgressCancel = document.getElementById('upload-progress-cancel');
+
+let currentXhr = null;
+let uploadQueue = [];
+let isUploading = false;
 
 let messages = [];
 let favorites = [];
@@ -609,31 +620,125 @@ async function verifyPassword(password) {
   }
 }
 
-async function sendMessage(type, content) {
-  if (type === 'text' && (!content || !content.trim())) {
-    showToast('内容不能为空');
-    return;
+function setUploadProgress(visible, percent = 0, text = '上传中...') {
+  if (visible) {
+    uploadProgressContainer.classList.remove('hidden');
+    uploadProgressFill.style.width = `${percent}%`;
+    uploadProgressText.textContent = text;
+    uploadProgressPercent.textContent = `${Math.round(percent)}%`;
+  } else {
+    uploadProgressContainer.classList.add('hidden');
+    uploadProgressFill.style.width = '0%';
   }
+}
 
-  if (type === 'image' && !content) {
-    return;
+function cancelUpload() {
+  if (currentXhr) {
+    currentXhr.abort();
+    currentXhr = null;
   }
+  uploadQueue = [];
+  isUploading = false;
+  setUploadProgress(false);
+  showToast('上传已取消');
+}
 
-  if (type === 'file' && (!content || !content.dataUrl)) {
-    showToast('文件内容不能为空');
-    return;
-  }
+function sendMessageWithProgress(type, content) {
+  return new Promise((resolve, reject) => {
+    if (type === 'text' && (!content || !content.trim())) {
+      showToast('内容不能为空');
+      reject(new Error('内容不能为空'));
+      return;
+    }
+
+    if (type === 'image' && !content) {
+      reject(new Error('图片内容为空'));
+      return;
+    }
+
+    if (type === 'file' && (!content || !content.dataUrl)) {
+      showToast('文件内容不能为空');
+      reject(new Error('文件内容为空'));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    currentXhr = xhr;
+
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable) {
+        const percent = (e.loaded / e.total) * 100;
+        setUploadProgress(true, percent, `上传中... ${formatFileSize(e.loaded)} / ${formatFileSize(e.total)}`);
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      currentXhr = null;
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          resolve(response);
+        } catch (error) {
+          reject(new Error('响应解析失败'));
+        }
+      } else {
+        try {
+          const response = JSON.parse(xhr.responseText);
+          reject(new Error(response.error || '上传失败'));
+        } catch (error) {
+          reject(new Error('上传失败'));
+        }
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      currentXhr = null;
+      reject(new Error('网络错误'));
+    });
+
+    xhr.addEventListener('abort', () => {
+      currentXhr = null;
+      reject(new Error('上传已取消'));
+    });
+
+    xhr.open('POST', '/api/messages');
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send(JSON.stringify({ type, content }));
+  });
+}
+
+async function processUploadQueue() {
+  if (isUploading || uploadQueue.length === 0) return;
+
+  isUploading = true;
+  const { type, content } = uploadQueue[0];
 
   try {
-    await fetch('/api/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type, content })
-    });
+    setUploadProgress(true, 0, '准备上传...');
+    await sendMessageWithProgress(type, content);
   } catch (error) {
-    showToast('发送失败');
-    console.error(error);
+    if (error.message !== '上传已取消') {
+      showToast(error.message || '上传失败');
+      console.error(error);
+    }
+  } finally {
+    uploadQueue.shift();
+    isUploading = false;
+    setUploadProgress(false);
+
+    if (uploadQueue.length > 0) {
+      processUploadQueue();
+    }
   }
+}
+
+function queueUpload(type, content) {
+  uploadQueue.push({ type, content });
+  processUploadQueue();
+}
+
+async function sendMessage(type, content) {
+  queueUpload(type, content);
 }
 
 async function deleteMessage(id) {
@@ -985,6 +1090,7 @@ pasteTextBtn.addEventListener('click', pasteText);
 pasteImageBtn.addEventListener('click', pasteImage);
 clearAllBtn.addEventListener('click', clearAllMessages);
 logoutBtn.addEventListener('click', () => logout(true));
+uploadProgressCancel.addEventListener('click', cancelUpload);
 
 tabs.forEach((tab) => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
@@ -1097,5 +1203,65 @@ socket.on('message-favorite', (data) => {
     renderFavorites();
   }
 });
+
+// 拖放文件处理
+let dragCounter = 0;
+
+function handleDragEnter(e) {
+  e.preventDefault();
+  dragCounter++;
+  dropOverlay.classList.remove('hidden');
+  dropZone.classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter === 0) {
+    dropOverlay.classList.add('hidden');
+    dropZone.classList.remove('drag-over');
+  }
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+}
+
+async function handleDrop(e) {
+  e.preventDefault();
+  dragCounter = 0;
+  dropOverlay.classList.add('hidden');
+  dropZone.classList.remove('drag-over');
+
+  const files = e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+
+  // 分离图片和普通文件
+  const imageFiles = [];
+  const otherFiles = [];
+
+  for (const file of files) {
+    if (file.type.startsWith('image/')) {
+      imageFiles.push(file);
+    } else {
+      otherFiles.push(file);
+    }
+  }
+
+  // 处理图片
+  if (imageFiles.length > 0) {
+    await handleImageFiles(imageFiles);
+  }
+
+  // 处理普通文件
+  if (otherFiles.length > 0) {
+    await handleFileUpload(otherFiles);
+  }
+}
+
+dropZone.addEventListener('dragenter', handleDragEnter);
+dropZone.addEventListener('dragleave', handleDragLeave);
+dropZone.addEventListener('dragover', handleDragOver);
+dropZone.addEventListener('drop', handleDrop);
 
 checkAuth();

@@ -33,7 +33,13 @@
         <div class="chat-container">
           <div id="messages-list" class="messages-list"></div>
 
-          <div class="input-area">
+          <div class="input-area" id="drop-zone">
+            <div class="drop-overlay hidden" id="drop-overlay">
+              <div class="drop-content">
+                <span class="drop-icon">📁</span>
+                <span class="drop-text">拖放文件或图片到这里</span>
+              </div>
+            </div>
             <div class="input-row">
               <textarea id="text-input" placeholder="输入文字消息..." rows="1"></textarea>
               <button id="send-text" class="btn btn-primary">发送</button>
@@ -49,6 +55,16 @@
             </div>
             <div class="action-row">
               <span id="image-processing-state" class="processing-state hidden" aria-live="polite">图片处理中...</span>
+              <div id="upload-progress-container" class="upload-progress-container hidden">
+                <div class="upload-progress-bar">
+                  <div id="upload-progress-fill" class="upload-progress-fill"></div>
+                </div>
+                <div class="upload-progress-info">
+                  <span id="upload-progress-text" class="upload-progress-text">上传中...</span>
+                  <span id="upload-progress-percent" class="upload-progress-percent">0%</span>
+                  <button id="upload-progress-cancel" class="upload-progress-cancel">取消</button>
+                </div>
+              </div>
               <button id="paste-image" class="btn btn-small btn-secondary">粘贴图片</button>
               <button id="clear-all" class="btn btn-small btn-danger">清空全部</button>
             </div>
