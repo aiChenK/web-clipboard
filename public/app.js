@@ -651,13 +651,8 @@ function sendMessageWithProgress(type, content) {
       return;
     }
 
-    if (type === 'image' && !content) {
-      reject(new Error('图片内容为空'));
-      return;
-    }
-
-    if (type === 'file' && (!content || !content.dataUrl)) {
-      showToast('文件内容不能为空');
+    if ((type === 'image' || type === 'file') && !(content instanceof File || content instanceof Blob)) {
+      showToast('文件内容为空');
       reject(new Error('文件内容为空'));
       return;
     }
@@ -701,9 +696,19 @@ function sendMessageWithProgress(type, content) {
       reject(new Error('上传已取消'));
     });
 
-    xhr.open('POST', '/api/messages');
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.send(JSON.stringify({ type, content }));
+    // 文本消息使用原有 JSON API
+    if (type === 'text') {
+      xhr.open('POST', '/api/messages');
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.send(JSON.stringify({ type, content }));
+    } else {
+      // 图片和文件使用 FormData
+      const formData = new FormData();
+      formData.append('type', type);
+      formData.append('file', content);
+      xhr.open('POST', '/api/messages/upload');
+      xhr.send(formData);
+    }
   });
 }
 
@@ -1013,27 +1018,14 @@ async function processAndSendImageBlob(blob) {
 async function handleImageFiles(files) {
   for (const file of files) {
     if (!file || !file.type.startsWith('image/')) continue;
-    await processAndSendImageBlob(file);
+    queueUpload('image', file);
   }
-}
-
-async function fileToDataUrl(file) {
-  return blobToDataUrl(file);
 }
 
 async function handleFileUpload(files) {
   for (const file of files) {
     if (!file) continue;
-    try {
-      const dataUrl = await fileToDataUrl(file);
-      await sendMessage('file', {
-        name: file.name,
-        dataUrl
-      });
-    } catch (error) {
-      showToast(`文件上传失败: ${file.name || '未知文件'}`);
-      console.error(error);
-    }
+    queueUpload('file', file);
   }
 }
 
@@ -1046,7 +1038,9 @@ async function pasteImage() {
         if (!type.startsWith('image/')) continue;
 
         const blob = await item.getType(type);
-        await processAndSendImageBlob(blob);
+        // 将 Blob 转为 File 对象，添加默认文件名
+        const file = new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type || 'image/png' });
+        queueUpload('image', file);
         return;
       }
     }

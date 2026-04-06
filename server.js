@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const multer = require('multer');
 const path = require('path');
 const fs = require('fs/promises');
 
@@ -32,6 +33,34 @@ let persistRunning = false;
 let cleanupRunning = false;
 
 const EXPIRE_TIME = EXPIRE_HOURS * 60 * 60 * 1000;
+
+// Multer 配置用于 multipart/form-data 上传
+const multerStorage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    const dateDir = toDateFolder();
+    const category = req.body.type === 'image' ? 'images' : 'files';
+    const absolutePath = path.join(UPLOAD_ROOT, category, dateDir);
+    await ensureDir(absolutePath);
+    cb(null, absolutePath);
+  },
+  filename: (req, file, cb) => {
+    const id = createMessageId();
+    const category = req.body.type === 'image' ? 'images' : 'files';
+    const suffix = req.body.type === 'image' ? '-orig' : '';
+    const safeName = sanitizeFilename(file.originalname || 'file');
+    const parsed = path.parse(safeName);
+    const ext = parsed.ext || extensionFromMime(file.mimetype) || '';
+    const filename = category === 'files'
+      ? `${id}-${parsed.name}${ext}`
+      : `${id}${suffix}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const uploadMiddleware = multer({
+  storage: multerStorage,
+  limits: { fileSize: 100 * 1024 * 1024 } // 100MB 限制
+});
 
 const MIME_EXTENSION_MAP = {
   'image/jpeg': '.jpg',
@@ -610,6 +639,76 @@ app.post('/api/messages', async (req, res) => {
   } catch (error) {
     console.error('处理消息失败:', error);
     return res.status(400).json({ error: error.message || '消息内容格式错误' });
+  }
+
+  messages.push(message);
+  lastActivity = Date.now();
+  schedulePersist();
+
+  const publicMessage = toPublicMessage(message);
+  io.emit('message-new', publicMessage);
+
+  return res.json({ success: true, message: publicMessage });
+});
+
+// multipart/form-data 上传 endpoint
+app.post('/api/messages/upload', uploadMiddleware.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: '缺少文件' });
+  }
+
+  const type = req.body.type || 'file';
+  if (type !== 'image' && type !== 'file') {
+    return res.status(400).json({ error: '不支持的消息类型' });
+  }
+
+  const id = createMessageId();
+  const category = type === 'image' ? 'images' : 'files';
+  const dateDir = toDateFolder();
+  const safeName = sanitizeFilename(req.file.originalname || 'file');
+  const parsed = path.parse(safeName);
+  const ext = parsed.ext || extensionFromMime(req.file.mimetype) || '';
+  const suffix = type === 'image' ? '-orig' : '';
+  const filename = category === 'files'
+    ? `${id}-${parsed.name}${ext}`
+    : `${id}${suffix}${ext}`;
+
+  // 重命名 multer 生成的文件为正确的 ID 命名
+  const oldPath = req.file.path;
+  const newRelativePath = path.join(category, dateDir, filename);
+  const newAbsolutePath = path.join(UPLOAD_ROOT, newRelativePath);
+
+  try {
+    await fs.rename(oldPath, newAbsolutePath);
+  } catch (error) {
+    // 如果跨目录 rename 失败，使用 copy + delete
+    await fs.copyFile(oldPath, newAbsolutePath);
+    await fs.unlink(oldPath);
+  }
+
+  const message = {
+    id,
+    type,
+    content: {},
+    timestamp: Date.now()
+  };
+
+  if (type === 'image') {
+    message.content = {
+      originalPath: newRelativePath,
+      hasOriginal: true,
+      originalMimeType: req.file.mimetype
+    };
+    // 对于图片，暂无缩略图，后续可按需生成
+    message.content.thumbnailPath = newRelativePath;
+    message.content.thumbnailMimeType = req.file.mimetype;
+  } else {
+    message.content = {
+      name: safeName,
+      size: req.file.size,
+      mimeType: req.file.mimetype,
+      filePath: newRelativePath
+    };
   }
 
   messages.push(message);
