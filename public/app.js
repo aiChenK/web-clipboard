@@ -790,7 +790,18 @@ async function processUploadQueue() {
 
   try {
     setUploadProgress(true, 0, '准备上传...');
-    await sendMessageWithProgress(type, content);
+    const response = await sendMessageWithProgress(type, content);
+
+    // 直接将返回的消息添加到本地列表，不依赖 WebSocket
+    if (response && response.message) {
+      // 检查消息是否已存在（避免 WebSocket 重复添加）
+      const exists = messages.some((m) => m.id === response.message.id);
+      if (!exists) {
+        messages.push(response.message);
+        renderMessages({ scrollBottom: true });
+        showToast('发送成功');
+      }
+    }
   } catch (error) {
     if (error.message !== '上传已取消') {
       showToast(error.message || '上传失败');
@@ -1211,6 +1222,12 @@ socket.on('connect', () => {
   connectionStatus.textContent = '已连接';
   connectionStatus.className = 'status connected';
   if (!isAuthenticated) return;
+
+  // 多用户模式下重连需要重新加入房间
+  if (currentMode === 'multi' && userId) {
+    socket.emit('join', userId);
+  }
+
   refreshMessagesAfterReconnect();
 });
 
@@ -1231,6 +1248,11 @@ socket.on('sync', (data) => {
 
 socket.on('message-new', (msg) => {
   if (!isAuthenticated) return;
+
+  // 检查消息是否已存在（避免重复添加自己发送的消息）
+  const exists = messages.some((m) => m.id === msg.id);
+  if (exists) return;
+
   messages.push(msg);
   renderMessages({ scrollBottom: true });
   showToast('收到新消息');
