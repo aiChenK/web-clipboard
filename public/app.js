@@ -50,6 +50,9 @@ let imageProcessingCount = 0;
 let isAuthenticated = false;
 let requirePassword = true;
 let currentTab = 'messages';
+let userId = null; // 多用户模式下的用户 ID
+let currentMode = 'single'; // 运行模式: 'single' 或 'multi'
+let shouldStickToBottom = false; // 是否应该保持在底部
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -196,6 +199,10 @@ function createImageContent(msg) {
   img.addEventListener('load', () => {
     img.classList.remove('loading');
     placeholder.classList.add('hidden');
+    // 图片加载后，如果应该保持在底部则滚动
+    if (shouldStickToBottom) {
+      messagesList.scrollTop = messagesList.scrollHeight;
+    }
   });
 
   img.addEventListener('error', () => {
@@ -359,6 +366,7 @@ function renderMessages({ scrollBottom = false } = {}) {
   updateMessageCount();
 
   if (scrollBottom) {
+    shouldStickToBottom = true;
     scrollToBottom();
   }
 }
@@ -368,19 +376,30 @@ function scrollToBottom() {
 }
 
 function checkAuth() {
-  // 先检查是否需要密码
+  // 先检查运行模式和是否需要密码
   fetch('/api/auth/status')
     .then((res) => res.json())
     .then((data) => {
+      currentMode = data.mode || 'single';
       requirePassword = data.requirePassword;
+
+      // 无密码模式下隐藏退出按钮
       if (!requirePassword) {
-        // 无密码模式，直接进入
+        logoutBtn.style.display = 'none';
+        // 无密码模式（单用户），直接进入
         enterChatMode();
         return;
       }
-      // 有密码模式，检查本地缓存
+
+      // 有密码模式，检查本地缓存的 userId 和密码
+      const savedUserId = localStorage.getItem('web-clipboard-user-id');
       const savedPassword = localStorage.getItem('web-clipboard-password');
-      if (savedPassword) {
+
+      if (currentMode === 'multi' && savedUserId && savedPassword) {
+        // 多用户模式：有缓存的 userId 和密码
+        verifyPassword(savedPassword, savedUserId);
+      } else if (savedPassword) {
+        // 单用户模式：只有密码
         verifyPassword(savedPassword);
       }
     })
@@ -398,9 +417,14 @@ function enterChatMode() {
   isAuthenticated = true;
   authSection.classList.add('hidden');
   chatSection.classList.remove('hidden');
+
+  // 多用户模式：加入 Socket.IO 房间
+  if (currentMode === 'multi' && userId) {
+    socket.emit('join', userId);
+  }
+
   loadInitialMessages();
   loadFavorites();
-  loadVersion();
 }
 
 async function loadVersion() {
@@ -432,7 +456,11 @@ function switchTab(tabName) {
 
 async function loadFavorites() {
   try {
-    const response = await fetch('/api/favorites');
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+    const response = await fetch(`/api/favorites?${params.toString()}`);
     if (!response.ok) return;
     const data = await response.json();
     favorites = data.messages || [];
@@ -444,7 +472,11 @@ async function loadFavorites() {
 async function toggleFavorite(id, isFavorite) {
   try {
     const method = isFavorite ? 'POST' : 'DELETE';
-    await fetch(`/api/messages/${id}/favorite`, { method });
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+    await fetch(`/api/messages/${id}/favorite?${params.toString()}`, { method });
   } catch (error) {
     showToast('收藏操作失败');
     console.error(error);
@@ -472,6 +504,8 @@ function renderFavorites() {
 
 function logout(showMessage = true) {
   localStorage.removeItem('web-clipboard-password');
+  localStorage.removeItem('web-clipboard-user-id');
+  userId = null;
   isAuthenticated = false;
   messages = [];
   favorites = [];
@@ -481,6 +515,10 @@ function logout(showMessage = true) {
   isLoadingOlder = false;
   isReconnectRefreshing = false;
   setTopLoading(false);
+  shouldStickToBottom = false;
+
+  // 重置到消息tab
+  switchTab('messages');
 
   if (requirePassword) {
     authSection.classList.remove('hidden');
@@ -504,6 +542,11 @@ async function fetchMessagesPage({ before, limit = PAGE_SIZE } = {}) {
   params.set('limit', String(limit));
   if (Number.isFinite(before)) {
     params.set('before', String(before));
+  }
+
+  // 多用户模式下添加 userId 参数
+  if (currentMode === 'multi' && userId) {
+    params.set('userId', userId);
   }
 
   const response = await fetch(`/api/messages?${params.toString()}`);
@@ -593,7 +636,7 @@ async function loadOlderMessages() {
   }
 }
 
-async function verifyPassword(password) {
+async function verifyPassword(password, cachedUserId = null) {
   try {
     const response = await fetch('/api/auth', {
       method: 'POST',
@@ -604,16 +647,24 @@ async function verifyPassword(password) {
     const data = await response.json();
 
     if (data.success) {
+      // 多用户模式：存储 userId
+      if (data.mode === 'multi' && data.userId) {
+        userId = data.userId;
+        localStorage.setItem('web-clipboard-user-id', userId);
+      }
+
       // 无密码模式不缓存密码
       if (!data.noPassword) {
         localStorage.setItem('web-clipboard-password', password);
       }
+
       enterChatMode();
       return;
     }
 
     authError.classList.remove('hidden');
     localStorage.removeItem('web-clipboard-password');
+    localStorage.removeItem('web-clipboard-user-id');
   } catch (error) {
     showToast('验证失败');
     console.error(error);
@@ -700,12 +751,21 @@ function sendMessageWithProgress(type, content) {
     if (type === 'text') {
       xhr.open('POST', '/api/messages');
       xhr.setRequestHeader('Content-Type', 'application/json');
-      xhr.send(JSON.stringify({ type, content }));
+      const payload = { type, content };
+      // 多用户模式下添加 userId
+      if (currentMode === 'multi' && userId) {
+        payload.userId = userId;
+      }
+      xhr.send(JSON.stringify(payload));
     } else {
       // 图片和文件使用 FormData
       const formData = new FormData();
       formData.append('type', type);
       formData.append('file', content);
+      // 多用户模式下添加 userId
+      if (currentMode === 'multi' && userId) {
+        formData.append('userId', userId);
+      }
       xhr.open('POST', '/api/messages/upload');
       xhr.send(formData);
     }
@@ -748,7 +808,11 @@ async function sendMessage(type, content) {
 
 async function deleteMessage(id) {
   try {
-    await fetch(`/api/messages/${id}`, {
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+    await fetch(`/api/messages/${id}?${params.toString()}`, {
       method: 'DELETE'
     });
   } catch (error) {
@@ -760,7 +824,11 @@ async function deleteMessage(id) {
 async function clearAllMessages() {
   showConfirmModal('确定要清空所有消息吗？', async () => {
     try {
-      await fetch('/api/messages/clear', {
+      const params = new URLSearchParams();
+      if (currentMode === 'multi' && userId) {
+        params.set('userId', userId);
+      }
+      await fetch(`/api/messages/clear?${params.toString()}`, {
         method: 'POST'
       });
       showToast('已清空');
@@ -881,7 +949,11 @@ async function fetchOriginalImageWithTimeout(id, timeoutMs = ORIGINAL_FETCH_TIME
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`/api/messages/${id}/image-original`, {
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+    const response = await fetch(`/api/messages/${id}/image-original?${params.toString()}`, {
       method: 'GET',
       signal: controller.signal
     });
@@ -1100,6 +1172,13 @@ fileInput.addEventListener('change', (e) => {
 });
 
 messagesList.addEventListener('scroll', () => {
+  // 检测是否离开底部
+  const threshold = 150;
+  const isNearBottom = messagesList.scrollHeight - messagesList.scrollTop - messagesList.clientHeight < threshold;
+  if (!isNearBottom) {
+    shouldStickToBottom = false;
+  }
+
   if (messagesList.scrollTop <= TOP_LOAD_THRESHOLD) {
     loadOlderMessages();
   }
@@ -1257,5 +1336,8 @@ dropZone.addEventListener('dragenter', handleDragEnter);
 dropZone.addEventListener('dragleave', handleDragLeave);
 dropZone.addEventListener('dragover', handleDragOver);
 dropZone.addEventListener('drop', handleDrop);
+
+// 页面加载时立即获取版本号
+loadVersion();
 
 checkAuth();

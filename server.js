@@ -16,16 +16,93 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || '';
+const ACCESS_PASSWORDS = process.env.ACCESS_PASSWORDS || '';
+const MIGRATE_DEFAULT_USER = process.env.MIGRATE_DEFAULT_USER || '';
 const EXPIRE_HOURS = Number.parseInt(process.env.EXPIRE_HOURS, 10) || 168;
 const MESSAGE_PAGE_SIZE = Number.parseInt(process.env.MESSAGE_PAGE_SIZE, 10) || 30;
 const SOCKET_SYNC_LIMIT = Number.parseInt(process.env.SOCKET_SYNC_LIMIT, 10) || 20;
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, 'data');
-const DATA_FILE = process.env.DATA_FILE || path.join(STORAGE_ROOT, 'messages.json');
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(STORAGE_ROOT, 'uploads');
 const FILE_CLEANUP_INTERVAL_MINUTES = Number.parseInt(process.env.FILE_CLEANUP_INTERVAL_MINUTES, 10) || 30;
 const APP_VERSION = process.env.APP_VERSION || process.env.npm_package_version || require('./package.json').version || '1.0';
 
+// 多用户模式判断
+const MULTI_USER_MODE = Boolean(ACCESS_PASSWORDS);
+
+// 解析密码映射: userId:password，并校验格式和密码唯一性
+const userPasswordMap = new Map();
+const userIdSet = new Set();
+const passwordSet = new Set();
+const parseErrors = [];
+
+if (MULTI_USER_MODE) {
+  const pairs = ACCESS_PASSWORDS.split(',').map((s) => s.trim()).filter(Boolean);
+
+  for (let i = 0; i < pairs.length; i++) {
+    const pair = pairs[i];
+    const parts = pair.split(':').map((s) => s.trim());
+
+    // 校验格式：必须为 userId:password
+    if (parts.length !== 2) {
+      parseErrors.push(`第 ${i + 1} 个配置格式错误: "${pair}"，应为 "userId:password"`);
+      continue;
+    }
+
+    const [userId, password] = parts;
+
+    // 校验 userId 非空
+    if (!userId) {
+      parseErrors.push(`第 ${i + 1} 个配置 userId 为空`);
+      continue;
+    }
+
+    // 校验 password 非空
+    if (!password) {
+      parseErrors.push(`第 ${i + 1} 个配置密码为空 (用户: ${userId})`);
+      continue;
+    }
+
+    // 校验 userId 唯一性
+    if (userIdSet.has(userId)) {
+      parseErrors.push(`userId 重复: "${userId}"`);
+      continue;
+    }
+
+    // 校验密码唯一性
+    if (passwordSet.has(password)) {
+      parseErrors.push(`密码重复，多个用户使用了相同密码 (冲突用户包含: "${userId}")`);
+      continue;
+    }
+
+    userIdSet.add(userId);
+    passwordSet.add(password);
+    userPasswordMap.set(password, userId);
+  }
+
+  // 如果有解析错误，输出错误并退出
+  if (parseErrors.length > 0) {
+    console.error('❌ ACCESS_PASSWORDS 配置错误:');
+    parseErrors.forEach((err) => console.error(`   - ${err}`));
+    console.error('\n正确格式: ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3');
+    console.error('注意：每个用户的密码必须唯一，不能重复');
+    process.exit(1);
+  }
+
+  // 校验 MIGRATE_DEFAULT_USER 是否在用户列表中
+  if (MIGRATE_DEFAULT_USER && !userIdSet.has(MIGRATE_DEFAULT_USER)) {
+    console.error('❌ MIGRATE_DEFAULT_USER 配置错误:');
+    console.error(`   - 迁移目标用户 "${MIGRATE_DEFAULT_USER}" 未在 ACCESS_PASSWORDS 中定义`);
+    console.error('\n请在 ACCESS_PASSWORDS 中添加该用户，例如:');
+    console.error(`   ACCESS_PASSWORDS=${MIGRATE_DEFAULT_USER}:yourpassword,otheruser:otherpass`);
+    process.exit(1);
+  }
+}
+
+// 用户数据存储结构: userId -> { messages, lastActivity }
+const userStates = new Map();
+
+// 全局状态（单用户模式使用）
 let messages = [];
 let lastActivity = Date.now();
 let persistScheduled = false;
@@ -34,26 +111,71 @@ let cleanupRunning = false;
 
 const EXPIRE_TIME = EXPIRE_HOURS * 60 * 60 * 1000;
 
+// 获取用户数据路径
+function getUserDataDir(userId) {
+  return path.join(STORAGE_ROOT, 'users', userId);
+}
+
+function getUserDataFile(userId) {
+  return path.join(getUserDataDir(userId), 'messages.json');
+}
+
+function getUserUploadRoot(userId) {
+  return path.join(getUserDataDir(userId), 'uploads');
+}
+
+// 获取单用户模式的数据文件路径
+const SINGLE_USER_DATA_FILE = path.join(STORAGE_ROOT, 'messages.json');
+
+// 根据模式获取数据文件路径
+function getDataFile(userId) {
+  if (MULTI_USER_MODE && userId) {
+    return getUserDataFile(userId);
+  }
+  return SINGLE_USER_DATA_FILE;
+}
+
+// 根据模式获取上传目录
+function getUploadRoot(userId) {
+  if (MULTI_USER_MODE && userId) {
+    return getUserUploadRoot(userId);
+  }
+  return UPLOAD_ROOT;
+}
+
+// 获取用户状态
+function getUserState(userId) {
+  if (!MULTI_USER_MODE) {
+    return { messages, lastActivity };
+  }
+
+  if (!userStates.has(userId)) {
+    userStates.set(userId, { messages: [], lastActivity: Date.now() });
+  }
+  return userStates.get(userId);
+}
+
+// 通过密码获取用户ID
+function getUserIdByPassword(password) {
+  if (!MULTI_USER_MODE) {
+    return null; // 单用户模式不返回 userId
+  }
+  return userPasswordMap.get(password) || null;
+}
+
 // Multer 配置用于 multipart/form-data 上传
+// 注意：multipart 解析时字段顺序不确定，userId 可能在文件之后
+// 所以先存到临时目录，后续再移动到正确的用户目录
 const multerStorage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const dateDir = toDateFolder();
-    const category = req.body.type === 'image' ? 'images' : 'files';
-    const absolutePath = path.join(UPLOAD_ROOT, category, dateDir);
-    await ensureDir(absolutePath);
-    cb(null, absolutePath);
+    const tempDir = path.join(STORAGE_ROOT, 'temp', toDateFolder());
+    await ensureDir(tempDir);
+    cb(null, tempDir);
   },
   filename: (req, file, cb) => {
     const id = createMessageId();
-    const category = req.body.type === 'image' ? 'images' : 'files';
-    const suffix = req.body.type === 'image' ? '-orig' : '';
-    const safeName = sanitizeFilename(file.originalname || 'file');
-    const parsed = path.parse(safeName);
-    const ext = parsed.ext || extensionFromMime(file.mimetype) || '';
-    const filename = category === 'files'
-      ? `${id}-${parsed.name}${ext}`
-      : `${id}${suffix}${ext}`;
-    cb(null, filename);
+    const ext = path.extname(file.originalname) || extensionFromMime(file.mimetype) || '';
+    cb(null, `${id}${ext}`);
   }
 });
 
@@ -92,7 +214,10 @@ function toPosixPath(filePath) {
   return filePath.split(path.sep).join('/');
 }
 
-function toUploadUrl(relativePath) {
+function toUploadUrl(relativePath, userId = null) {
+  if (MULTI_USER_MODE && userId) {
+    return `/uploads/${userId}/${toPosixPath(relativePath)}`;
+  }
   return `/uploads/${toPosixPath(relativePath)}`;
 }
 
@@ -176,7 +301,8 @@ function withPreferredExt(filename, fallbackExt) {
   return `${base}${ext}`;
 }
 
-async function writeBinaryToUpload({ category, id, buffer, mimeType, filenameHint, suffix = '' }) {
+async function writeBinaryToUpload({ category, id, buffer, mimeType, filenameHint, suffix = '', userId = null }) {
+  const uploadRoot = getUploadRoot(userId);
   const dateDir = toDateFolder();
   const safeHint = sanitizeFilename(filenameHint || 'file');
   const finalName = withPreferredExt(safeHint, extensionFromMime(mimeType));
@@ -186,7 +312,7 @@ async function writeBinaryToUpload({ category, id, buffer, mimeType, filenameHin
     : `${id}${suffix}${parsed.ext || extensionFromMime(mimeType) || '.bin'}`;
 
   const relativePath = path.join(category, dateDir, leaf);
-  const absolutePath = path.join(UPLOAD_ROOT, relativePath);
+  const absolutePath = path.join(uploadRoot, relativePath);
 
   await ensureDir(path.dirname(absolutePath));
   await fs.writeFile(absolutePath, buffer);
@@ -194,19 +320,20 @@ async function writeBinaryToUpload({ category, id, buffer, mimeType, filenameHin
   return toPosixPath(relativePath);
 }
 
-function resolveUploadAbsolute(relativePath) {
-  const absolutePath = path.resolve(UPLOAD_ROOT, relativePath);
-  const rootWithSep = `${path.resolve(UPLOAD_ROOT)}${path.sep}`;
-  if (absolutePath !== path.resolve(UPLOAD_ROOT) && !absolutePath.startsWith(rootWithSep)) {
+function resolveUploadAbsolute(relativePath, userId = null) {
+  const uploadRoot = getUploadRoot(userId);
+  const absolutePath = path.resolve(uploadRoot, relativePath);
+  const rootWithSep = `${path.resolve(uploadRoot)}${path.sep}`;
+  if (absolutePath !== path.resolve(uploadRoot) && !absolutePath.startsWith(rootWithSep)) {
     throw new Error('invalid upload path');
   }
   return absolutePath;
 }
 
-async function removeFileIfExists(relativePath) {
+async function removeFileIfExists(relativePath, userId = null) {
   if (!relativePath) return;
   try {
-    const absolute = resolveUploadAbsolute(relativePath);
+    const absolute = resolveUploadAbsolute(relativePath, userId);
     await fs.unlink(absolute);
   } catch (error) {
     if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return;
@@ -231,10 +358,10 @@ function getMessageFileRefs(message) {
   return [];
 }
 
-async function deleteMessageFiles(message) {
+async function deleteMessageFiles(message, userId = null) {
   const refs = getMessageFileRefs(message);
   for (const filePath of refs) {
-    await removeFileIfExists(filePath);
+    await removeFileIfExists(filePath, userId);
   }
 }
 
@@ -267,44 +394,97 @@ function normalizePersistedState(state) {
   };
 }
 
-async function loadPersistedState() {
+async function loadPersistedState(userId = null) {
+  const dataFile = getDataFile(userId);
+
   try {
-    const raw = await fs.readFile(DATA_FILE, 'utf8');
+    const raw = await fs.readFile(dataFile, 'utf8');
     const parsed = JSON.parse(raw);
     const normalized = normalizePersistedState(parsed);
-    messages = normalized.messages;
-    lastActivity = normalized.lastActivity;
-    console.log(`已加载持久化数据: ${messages.length} 条, 文件: ${DATA_FILE}`);
+
+    // 单用户模式：直接修改全局变量
+    if (!MULTI_USER_MODE) {
+      messages = normalized.messages;
+      lastActivity = normalized.lastActivity;
+    } else {
+      // 多用户模式：修改用户状态
+      const state = getUserState(userId);
+      state.messages = normalized.messages;
+      state.lastActivity = normalized.lastActivity;
+    }
+
+    console.log(`已加载持久化数据: ${normalized.messages.length} 条, 用户: ${userId || '单用户'}, 文件: ${dataFile}`);
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      console.log(`未找到持久化文件，使用空数据启动: ${DATA_FILE}`);
+      console.log(`未找到持久化文件，使用空数据启动: ${dataFile}`);
       return;
     }
     console.error('读取持久化数据失败，使用空数据启动:', error);
-    messages = [];
-    lastActivity = Date.now();
+    if (!MULTI_USER_MODE) {
+      messages = [];
+      lastActivity = Date.now();
+    }
   }
 }
 
-async function persistState() {
+async function persistState(userId = null) {
+  const state = getUserState(userId);
+  const dataFile = getDataFile(userId);
+
   const payload = JSON.stringify(
     {
-      messages,
-      lastActivity
+      messages: state.messages,
+      lastActivity: state.lastActivity
     },
     null,
     2
   );
 
-  const dataDir = path.dirname(DATA_FILE);
-  const tmpFile = `${DATA_FILE}.tmp`;
+  const dataDir = path.dirname(dataFile);
+  const tmpFile = `${dataFile}.tmp`;
 
   await ensureDir(dataDir);
   await fs.writeFile(tmpFile, payload, 'utf8');
-  await fs.rename(tmpFile, DATA_FILE);
+  await fs.rename(tmpFile, dataFile);
 }
 
-function schedulePersist() {
+// 迁移单用户数据到指定用户
+async function migrateLegacyData(targetUserId) {
+  const legacyFile = SINGLE_USER_DATA_FILE;
+  const legacyUploadsDir = UPLOAD_ROOT;
+  const targetDir = getUserDataDir(targetUserId);
+  const targetFile = getUserDataFile(targetUserId);
+  const targetUploadsDir = getUserUploadRoot(targetUserId);
+
+  // 检查原文件是否存在
+  try {
+    await fs.access(legacyFile);
+  } catch {
+    console.log('无单用户数据需要迁移');
+    return false;
+  }
+
+  // 确保目标目录存在
+  await ensureDir(targetDir);
+
+  // 迁移数据文件
+  await fs.rename(legacyFile, targetFile);
+  console.log(`已迁移数据文件: ${legacyFile} -> ${targetFile}`);
+
+  // 迁移上传文件
+  try {
+    await fs.access(legacyUploadsDir);
+    await fs.rename(legacyUploadsDir, targetUploadsDir);
+    console.log(`已迁移上传目录: ${legacyUploadsDir} -> ${targetUploadsDir}`);
+  } catch {
+    console.log('上传目录不存在，跳过迁移');
+  }
+
+  console.log(`迁移完成，数据已迁移到用户: ${targetUserId}`);
+  return true;
+}
+
+function schedulePersist(userId = null) {
   persistScheduled = true;
   if (persistRunning) return;
 
@@ -314,24 +494,32 @@ function schedulePersist() {
     persistRunning = true;
 
     try {
-      await persistState();
+      if (MULTI_USER_MODE) {
+        // 多用户模式：持久化所有用户数据
+        for (const [uid] of userStates) {
+          await persistState(uid);
+        }
+      } else {
+        // 单用户模式
+        await persistState(null);
+      }
     } catch (error) {
       console.error('持久化消息失败:', error);
     } finally {
       persistRunning = false;
-      if (persistScheduled) schedulePersist();
+      if (persistScheduled) schedulePersist(userId);
     }
   });
 }
 
-function toPublicMessage(message) {
+function toPublicMessage(message, userId = null) {
   const result = { ...message, favorite: Boolean(message.favorite) };
 
   if (message.type === 'image') {
     const content = message.content;
 
     if (content && typeof content === 'object' && typeof content.thumbnailPath === 'string') {
-      const thumbnailUrl = toUploadUrl(content.thumbnailPath);
+      const thumbnailUrl = toUploadUrl(content.thumbnailPath, userId);
       result.content = {
         thumbnail: thumbnailUrl,
         hasOriginal: Boolean(content.hasOriginal),
@@ -360,7 +548,7 @@ function toPublicMessage(message) {
         name: content.name,
         size: content.size,
         mimeType: content.mimeType,
-        url: toUploadUrl(content.filePath)
+        url: toUploadUrl(content.filePath, userId)
       };
       return result;
     }
@@ -369,22 +557,23 @@ function toPublicMessage(message) {
   return result;
 }
 
-function getMessagesPage({ before, limit }) {
+function getMessagesPage({ before, limit, userId = null }) {
+  const state = getUserState(userId);
   const pageLimit = clampPageSize(limit);
   const source = Number.isFinite(before)
-    ? messages.filter((item) => item.timestamp < before)
-    : messages;
+    ? state.messages.filter((item) => item.timestamp < before)
+    : state.messages;
   const start = Math.max(source.length - pageLimit, 0);
   const page = source.slice(start);
 
   return {
     messages: page,
     hasMore: start > 0,
-    total: messages.length
+    total: state.messages.length
   };
 }
 
-async function persistImageContent(message, content) {
+async function persistImageContent(message, content, userId = null) {
   const normalized = normalizeImageIncomingContent(content);
   if (!normalized) {
     throw new Error('图片内容格式错误');
@@ -397,7 +586,8 @@ async function persistImageContent(message, content) {
     buffer: originalDecoded.buffer,
     mimeType: originalDecoded.mimeType,
     filenameHint: `original${extensionFromMime(originalDecoded.mimeType) || '.png'}`,
-    suffix: '-orig'
+    suffix: '-orig',
+    userId
   });
 
   let thumbnailPath = originalPath;
@@ -411,7 +601,8 @@ async function persistImageContent(message, content) {
       buffer: thumbnailDecoded.buffer,
       mimeType: thumbnailDecoded.mimeType,
       filenameHint: `thumbnail${extensionFromMime(thumbnailDecoded.mimeType) || '.jpg'}`,
-      suffix: '-thumb'
+      suffix: '-thumb',
+      userId
     });
     thumbnailMimeType = thumbnailDecoded.mimeType;
   }
@@ -425,7 +616,7 @@ async function persistImageContent(message, content) {
   };
 }
 
-async function persistFileContent(message, content) {
+async function persistFileContent(message, content, userId = null) {
   if (!content || typeof content !== 'object') {
     throw new Error('文件内容格式错误');
   }
@@ -441,7 +632,8 @@ async function persistFileContent(message, content) {
     id: message.id,
     buffer: decoded.buffer,
     mimeType: decoded.mimeType,
-    filenameHint: originalName
+    filenameHint: originalName,
+    userId
   });
 
   message.content = {
@@ -452,28 +644,54 @@ async function persistFileContent(message, content) {
   };
 }
 
-function cleanupExpiredData() {
+function cleanupExpiredData(userId = null) {
+  const state = getUserState(userId);
   const now = Date.now();
-  if (now - lastActivity <= EXPIRE_TIME) {
+  if (now - state.lastActivity <= EXPIRE_TIME) {
     return;
   }
 
   // 分离收藏和非收藏消息
-  const favoriteMessages = messages.filter((msg) => msg.favorite);
-  const expiredMessages = messages.filter((msg) => !msg.favorite);
+  const favoriteMessages = state.messages.filter((msg) => msg.favorite);
+  const expiredMessages = state.messages.filter((msg) => !msg.favorite);
 
   if (expiredMessages.length === 0) {
     return;
   }
 
-  messages = favoriteMessages; // 只保留收藏消息
-  lastActivity = now;
-  schedulePersist();
+  state.messages = favoriteMessages; // 只保留收藏消息
+  state.lastActivity = now;
+  schedulePersist(userId);
 
   // 只删除非收藏消息的文件
-  Promise.allSettled(expiredMessages.map((msg) => deleteMessageFiles(msg))).catch((error) => {
+  Promise.allSettled(expiredMessages.map((msg) => deleteMessageFiles(msg, userId))).catch((error) => {
     console.error('清理过期文件失败:', error);
   });
+}
+
+// 多用户模式下清理所有用户数据
+async function cleanupAllUsersExpiredData() {
+  if (MULTI_USER_MODE) {
+    // 扫描磁盘上所有用户目录
+    const usersDir = path.join(STORAGE_ROOT, 'users');
+    let userDirs = [];
+    try {
+      const entries = await fs.readdir(usersDir, { withFileTypes: true });
+      userDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error('扫描用户目录失败:', error);
+      }
+      return;
+    }
+
+    // 清理每个用户目录
+    for (const userId of userDirs) {
+      cleanupExpiredData(userId);
+    }
+  } else {
+    cleanupExpiredData(null);
+  }
 }
 
 async function listAllFilesRecursive(baseDir) {
@@ -529,22 +747,25 @@ async function removeEmptyDirsRecursive(dirPath, isRoot = true) {
   }
 }
 
-async function cleanupOrphanDiskFiles() {
+async function cleanupOrphanDiskFiles(userId = null) {
   if (cleanupRunning) return;
   cleanupRunning = true;
 
   try {
+    const uploadRoot = getUploadRoot(userId);
+    const state = getUserState(userId);
+
     const referenced = new Set();
-    for (const msg of messages) {
+    for (const msg of state.messages) {
       const refs = getMessageFileRefs(msg);
       refs.forEach((item) => referenced.add(item));
     }
 
-    const allFiles = await listAllFilesRecursive(UPLOAD_ROOT);
+    const allFiles = await listAllFilesRecursive(uploadRoot);
     let removedCount = 0;
 
     for (const absolutePath of allFiles) {
-      const relativePath = toPosixPath(path.relative(UPLOAD_ROOT, absolutePath));
+      const relativePath = toPosixPath(path.relative(uploadRoot, absolutePath));
       if (!referenced.has(relativePath)) {
         await fs.unlink(absolutePath).catch((error) => {
           if (error && error.code === 'ENOENT') return;
@@ -554,10 +775,10 @@ async function cleanupOrphanDiskFiles() {
       }
     }
 
-    await removeEmptyDirsRecursive(UPLOAD_ROOT, true);
+    await removeEmptyDirsRecursive(uploadRoot, true);
 
     if (removedCount > 0) {
-      console.log(`孤儿文件清理完成，删除 ${removedCount} 个文件`);
+      console.log(`孤儿文件清理完成，用户 ${userId || '单用户'} 删除 ${removedCount} 个文件`);
     }
   } catch (error) {
     console.error('孤儿文件清理失败:', error);
@@ -566,50 +787,118 @@ async function cleanupOrphanDiskFiles() {
   }
 }
 
-setInterval(cleanupExpiredData, 5 * 60 * 1000);
-setInterval(cleanupOrphanDiskFiles, FILE_CLEANUP_INTERVAL_MINUTES * 60 * 1000);
+// 多用户模式下清理所有用户的孤儿文件
+async function cleanupAllUsersOrphanFiles() {
+  if (MULTI_USER_MODE) {
+    // 扫描磁盘上所有用户目录
+    const usersDir = path.join(STORAGE_ROOT, 'users');
+    let userDirs = [];
+    try {
+      const entries = await fs.readdir(usersDir, { withFileTypes: true });
+      userDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error('扫描用户目录失败:', error);
+      }
+    }
+
+    // 清理每个用户目录
+    for (const userId of userDirs) {
+      await cleanupOrphanDiskFiles(userId);
+    }
+  } else {
+    await cleanupOrphanDiskFiles(null);
+  }
+}
+
+setInterval(cleanupAllUsersExpiredData, 5 * 60 * 1000);
+setInterval(cleanupAllUsersOrphanFiles, FILE_CLEANUP_INTERVAL_MINUTES * 60 * 1000);
 
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(UPLOAD_ROOT));
+
+// 多用户模式下的上传目录路由
+if (MULTI_USER_MODE) {
+  app.use('/uploads/:userId', (req, res, next) => {
+    const userId = req.params.userId;
+    const userUploadRoot = getUserUploadRoot(userId);
+    express.static(userUploadRoot)(req, res, next);
+  });
+} else {
+  app.use('/uploads', express.static(UPLOAD_ROOT));
+}
+
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+// 认证中间件：提取 userId
+function extractUserId(req, res, next) {
+  const body = req.body || {};
+  const query = req.query || {};
+  const headers = req.headers || {};
+  const userId = body.userId || query.userId || headers['x-user-id'];
+  req.userId = userId || null;
+  next();
+}
 
 app.post('/api/auth', (req, res) => {
   const { password } = req.body;
 
-  // 无密码模式：直接通过
+  // 多用户模式
+  if (MULTI_USER_MODE) {
+    const userId = getUserIdByPassword(password);
+    if (userId) {
+      return res.json({ success: true, userId, mode: 'multi' });
+    }
+    return res.status(401).json({ success: false, error: '密码错误' });
+  }
+
+  // 单用户模式：无密码模式直接通过
   if (!ACCESS_PASSWORD) {
-    return res.json({ success: true, noPassword: true });
+    return res.json({ success: true, noPassword: true, mode: 'single' });
   }
 
   if (password === ACCESS_PASSWORD) {
-    res.json({ success: true });
+    res.json({ success: true, mode: 'single' });
   } else {
     res.status(401).json({ success: false, error: '密码错误' });
   }
 });
 
 app.get('/api/auth/status', (req, res) => {
-  res.json({ requirePassword: Boolean(ACCESS_PASSWORD) });
+  if (MULTI_USER_MODE) {
+    res.json({
+      mode: 'multi',
+      requirePassword: true,
+      users: Array.from(userPasswordMap.values())
+    });
+  } else {
+    res.json({
+      mode: 'single',
+      requirePassword: Boolean(ACCESS_PASSWORD)
+    });
+  }
 });
 
 app.get('/api/version', (req, res) => {
-  res.json({ version: APP_VERSION });
+  res.json({ version: APP_VERSION, mode: MULTI_USER_MODE ? 'multi' : 'single' });
 });
 
-app.get('/api/messages', (req, res) => {
+app.get('/api/messages', extractUserId, (req, res) => {
+  const userId = req.userId;
   const before = Number(req.query.before);
   const limit = Number(req.query.limit);
-  const page = getMessagesPage({ before, limit });
+  const page = getMessagesPage({ before, limit, userId });
 
   res.json({
     ...page,
-    messages: page.messages.map(toPublicMessage),
+    messages: page.messages.map((msg) => toPublicMessage(msg, userId)),
     expireHours: EXPIRE_HOURS
   });
 });
 
-app.post('/api/messages', async (req, res) => {
+app.post('/api/messages', extractUserId, async (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
   const { type, content } = req.body;
 
   if (!type || !content) {
@@ -625,9 +914,9 @@ app.post('/api/messages', async (req, res) => {
 
   try {
     if (type === 'image') {
-      await persistImageContent(message, content);
+      await persistImageContent(message, content, userId);
     } else if (type === 'file') {
-      await persistFileContent(message, content);
+      await persistFileContent(message, content, userId);
     } else if (type === 'text') {
       if (typeof content !== 'string' || !content.trim()) {
         return res.status(400).json({ error: '文本内容不能为空' });
@@ -641,12 +930,18 @@ app.post('/api/messages', async (req, res) => {
     return res.status(400).json({ error: error.message || '消息内容格式错误' });
   }
 
-  messages.push(message);
-  lastActivity = Date.now();
-  schedulePersist();
+  state.messages.push(message);
+  state.lastActivity = Date.now();
+  schedulePersist(userId);
 
-  const publicMessage = toPublicMessage(message);
-  io.emit('message-new', publicMessage);
+  const publicMessage = toPublicMessage(message, userId);
+
+  // 多用户模式：只向该用户的房间广播
+  if (MULTI_USER_MODE && userId) {
+    io.to(userId).emit('message-new', publicMessage);
+  } else {
+    io.emit('message-new', publicMessage);
+  }
 
   return res.json({ success: true, message: publicMessage });
 });
@@ -657,8 +952,14 @@ app.post('/api/messages/upload', uploadMiddleware.single('file'), async (req, re
     return res.status(400).json({ error: '缺少文件' });
   }
 
+  const userId = req.body.userId || null;
+  const state = getUserState(userId);
+  const uploadRoot = getUploadRoot(userId);
+
   const type = req.body.type || 'file';
   if (type !== 'image' && type !== 'file') {
+    // 删除临时文件
+    await fs.unlink(req.file.path).catch(() => {});
     return res.status(400).json({ error: '不支持的消息类型' });
   }
 
@@ -673,10 +974,13 @@ app.post('/api/messages/upload', uploadMiddleware.single('file'), async (req, re
     ? `${id}-${parsed.name}${ext}`
     : `${id}${suffix}${ext}`;
 
-  // 重命名 multer 生成的文件为正确的 ID 命名
+  // 从临时目录移动到正确的用户目录
   const oldPath = req.file.path;
   const newRelativePath = path.join(category, dateDir, filename);
-  const newAbsolutePath = path.join(UPLOAD_ROOT, newRelativePath);
+  const newAbsolutePath = path.join(uploadRoot, newRelativePath);
+
+  // 确保目标目录存在
+  await ensureDir(path.dirname(newAbsolutePath));
 
   try {
     await fs.rename(oldPath, newAbsolutePath);
@@ -711,19 +1015,27 @@ app.post('/api/messages/upload', uploadMiddleware.single('file'), async (req, re
     };
   }
 
-  messages.push(message);
-  lastActivity = Date.now();
-  schedulePersist();
+  state.messages.push(message);
+  state.lastActivity = Date.now();
+  schedulePersist(userId);
 
-  const publicMessage = toPublicMessage(message);
-  io.emit('message-new', publicMessage);
+  const publicMessage = toPublicMessage(message, userId);
+
+  // 多用户模式：只向该用户的房间广播
+  if (MULTI_USER_MODE && userId) {
+    io.to(userId).emit('message-new', publicMessage);
+  } else {
+    io.emit('message-new', publicMessage);
+  }
 
   return res.json({ success: true, message: publicMessage });
 });
 
-app.get('/api/messages/:id/image-original', async (req, res) => {
+app.get('/api/messages/:id/image-original', extractUserId, async (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
   const { id } = req.params;
-  const message = messages.find((item) => item.id === id);
+  const message = state.messages.find((item) => item.id === id);
   if (!message) {
     return res.status(404).json({ error: '消息不存在' });
   }
@@ -735,7 +1047,7 @@ app.get('/api/messages/:id/image-original', async (req, res) => {
 
   if (content && typeof content === 'object' && typeof content.originalPath === 'string') {
     try {
-      const absolute = resolveUploadAbsolute(content.originalPath);
+      const absolute = resolveUploadAbsolute(content.originalPath, userId);
       const binary = await fs.readFile(absolute);
       const mimeType = content.originalMimeType || 'image/png';
       const original = `data:${mimeType};base64,${binary.toString('base64')}`;
@@ -757,9 +1069,11 @@ app.get('/api/messages/:id/image-original', async (req, res) => {
   return res.status(404).json({ error: '原图不存在' });
 });
 
-app.get('/api/messages/:id/file-download', async (req, res) => {
+app.get('/api/messages/:id/file-download', extractUserId, async (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
   const { id } = req.params;
-  const message = messages.find((item) => item.id === id);
+  const message = state.messages.find((item) => item.id === id);
   if (!message) {
     return res.status(404).json({ error: '消息不存在' });
   }
@@ -773,7 +1087,7 @@ app.get('/api/messages/:id/file-download', async (req, res) => {
   }
 
   try {
-    const absolute = resolveUploadAbsolute(content.filePath);
+    const absolute = resolveUploadAbsolute(content.filePath, userId);
     return res.download(absolute, content.name);
   } catch (error) {
     if (error && error.code === 'ENOENT') {
@@ -784,81 +1098,114 @@ app.get('/api/messages/:id/file-download', async (req, res) => {
   }
 });
 
-app.delete('/api/messages/:id', async (req, res) => {
+app.delete('/api/messages/:id', extractUserId, async (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
   const { id } = req.params;
 
-  const index = messages.findIndex((item) => item.id === id);
+  const index = state.messages.findIndex((item) => item.id === id);
   if (index === -1) {
     return res.status(404).json({ error: '消息不存在' });
   }
 
-  const [removed] = messages.splice(index, 1);
-  lastActivity = Date.now();
-  schedulePersist();
+  const [removed] = state.messages.splice(index, 1);
+  state.lastActivity = Date.now();
+  schedulePersist(userId);
 
-  await deleteMessageFiles(removed);
+  await deleteMessageFiles(removed, userId);
 
-  io.emit('message-delete', id);
+  // 多用户模式：只向该用户的房间广播
+  if (MULTI_USER_MODE && userId) {
+    io.to(userId).emit('message-delete', id);
+  } else {
+    io.emit('message-delete', id);
+  }
 
   return res.json({ success: true });
 });
 
-app.post('/api/messages/clear', async (req, res) => {
-  // 分离收藏和非收藏消息
-  const favoriteMessages = messages.filter((msg) => msg.favorite);
-  const removedMessages = messages.filter((msg) => !msg.favorite);
+app.post('/api/messages/clear', extractUserId, async (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
 
-  messages = favoriteMessages; // 只保留收藏消息
-  lastActivity = Date.now();
-  schedulePersist();
+  // 分离收藏和非收藏消息
+  const favoriteMessages = state.messages.filter((msg) => msg.favorite);
+  const removedMessages = state.messages.filter((msg) => !msg.favorite);
+
+  state.messages = favoriteMessages; // 只保留收藏消息
+  state.lastActivity = Date.now();
+  schedulePersist(userId);
 
   // 只删除非收藏消息的文件
-  await Promise.allSettled(removedMessages.map((msg) => deleteMessageFiles(msg)));
+  await Promise.allSettled(removedMessages.map((msg) => deleteMessageFiles(msg, userId)));
 
-  io.emit('messages-clear', { favoriteCount: favoriteMessages.length });
+  // 多用户模式：只向该用户的房间广播
+  if (MULTI_USER_MODE && userId) {
+    io.to(userId).emit('messages-clear', { favoriteCount: favoriteMessages.length });
+  } else {
+    io.emit('messages-clear', { favoriteCount: favoriteMessages.length });
+  }
 
   return res.json({ success: true, favoriteCount: favoriteMessages.length });
 });
 
 // 获取收藏消息列表
-app.get('/api/favorites', (req, res) => {
-  const favorites = messages.filter((msg) => msg.favorite);
+app.get('/api/favorites', extractUserId, (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
+  const favorites = state.messages.filter((msg) => msg.favorite);
   res.json({
-    messages: favorites.map(toPublicMessage),
+    messages: favorites.map((msg) => toPublicMessage(msg, userId)),
     total: favorites.length
   });
 });
 
 // 收藏消息
-app.post('/api/messages/:id/favorite', (req, res) => {
+app.post('/api/messages/:id/favorite', extractUserId, (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
   const { id } = req.params;
-  const message = messages.find((item) => item.id === id);
+  const message = state.messages.find((item) => item.id === id);
   if (!message) {
     return res.status(404).json({ error: '消息不存在' });
   }
 
   message.favorite = true;
-  schedulePersist();
+  schedulePersist(userId);
 
-  const publicMessage = toPublicMessage(message);
-  io.emit('message-favorite', { id, favorite: true, message: publicMessage });
+  const publicMessage = toPublicMessage(message, userId);
+
+  // 多用户模式：只向该用户的房间广播
+  if (MULTI_USER_MODE && userId) {
+    io.to(userId).emit('message-favorite', { id, favorite: true, message: publicMessage });
+  } else {
+    io.emit('message-favorite', { id, favorite: true, message: publicMessage });
+  }
 
   return res.json({ success: true, message: publicMessage });
 });
 
 // 取消收藏
-app.delete('/api/messages/:id/favorite', (req, res) => {
+app.delete('/api/messages/:id/favorite', extractUserId, (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
   const { id } = req.params;
-  const message = messages.find((item) => item.id === id);
+  const message = state.messages.find((item) => item.id === id);
   if (!message) {
     return res.status(404).json({ error: '消息不存在' });
   }
 
   message.favorite = false;
-  schedulePersist();
+  schedulePersist(userId);
 
-  const publicMessage = toPublicMessage(message);
-  io.emit('message-favorite', { id, favorite: false, message: publicMessage });
+  const publicMessage = toPublicMessage(message, userId);
+
+  // 多用户模式：只向该用户的房间广播
+  if (MULTI_USER_MODE && userId) {
+    io.to(userId).emit('message-favorite', { id, favorite: false, message: publicMessage });
+  } else {
+    io.emit('message-favorite', { id, favorite: false, message: publicMessage });
+  }
 
   return res.json({ success: true, message: publicMessage });
 });
@@ -866,15 +1213,37 @@ app.delete('/api/messages/:id/favorite', (req, res) => {
 io.on('connection', (socket) => {
   console.log('用户连接:', socket.id);
 
-  const initialPage = getMessagesPage({
-    before: Number.NaN,
-    limit: SOCKET_SYNC_LIMIT
-  });
+  // 多用户模式下，等待客户端发送 userId 加入房间
+  if (MULTI_USER_MODE) {
+    socket.on('join', (userId) => {
+      if (userId) {
+        socket.join(userId);
+        console.log(`用户 ${socket.id} 加入房间: ${userId}`);
 
-  socket.emit('sync', {
-    ...initialPage,
-    messages: initialPage.messages.map(toPublicMessage)
-  });
+        const initialPage = getMessagesPage({
+          before: Number.NaN,
+          limit: SOCKET_SYNC_LIMIT,
+          userId
+        });
+
+        socket.emit('sync', {
+          ...initialPage,
+          messages: initialPage.messages.map((msg) => toPublicMessage(msg, userId))
+        });
+      }
+    });
+  } else {
+    // 单用户模式：直接同步
+    const initialPage = getMessagesPage({
+      before: Number.NaN,
+      limit: SOCKET_SYNC_LIMIT
+    });
+
+    socket.emit('sync', {
+      ...initialPage,
+      messages: initialPage.messages.map((msg) => toPublicMessage(msg))
+    });
+  }
 
   socket.on('disconnect', () => {
     console.log('用户断开连接:', socket.id);
@@ -883,17 +1252,52 @@ io.on('connection', (socket) => {
 
 async function start() {
   await ensureDir(STORAGE_ROOT);
-  await ensureDir(UPLOAD_ROOT);
 
-  await loadPersistedState();
-  await cleanupOrphanDiskFiles();
+  // 多用户模式
+  if (MULTI_USER_MODE) {
+    // 检查是否需要迁移单用户数据
+    if (MIGRATE_DEFAULT_USER) {
+      try {
+        const migrated = await migrateLegacyData(MIGRATE_DEFAULT_USER);
+        if (migrated) {
+          // 加载迁移后的用户数据
+          await loadPersistedState(MIGRATE_DEFAULT_USER);
+        }
+      } catch (error) {
+        console.error('迁移数据失败:', error);
+      }
+    } else {
+      // 检查是否有遗留的单用户数据
+      try {
+        await fs.access(SINGLE_USER_DATA_FILE);
+        console.warn('⚠️ 检测到单用户数据遗留，请设置 MIGRATE_DEFAULT_USER=<userId> 指定迁移目标');
+      } catch {
+        // 无遗留数据
+      }
+    }
+
+    // 加载所有用户的数据
+    for (const [password, userId] of userPasswordMap) {
+      await loadPersistedState(userId);
+      await cleanupOrphanDiskFiles(userId);
+    }
+  } else {
+    // 单用户模式
+    await ensureDir(UPLOAD_ROOT);
+    await loadPersistedState(null);
+    await cleanupOrphanDiskFiles(null);
+  }
 
   server.listen(PORT, () => {
     console.log(`服务器运行在 http://localhost:${PORT}`);
-    console.log(`密码保护: ${ACCESS_PASSWORD ? '已启用' : '未启用（无密码模式）'}`);
+    console.log(`运行模式: ${MULTI_USER_MODE ? '多用户' : '单用户'}`);
+    if (MULTI_USER_MODE) {
+      console.log(`用户数量: ${userPasswordMap.size}`);
+      console.log(`用户列表: ${Array.from(userPasswordMap.values()).join(', ')}`);
+    }
+    console.log(`密码保护: ${MULTI_USER_MODE ? '已启用' : (ACCESS_PASSWORD ? '已启用' : '未启用（无密码模式）')}`);
     console.log(`数据过期时间: ${EXPIRE_HOURS} 小时`);
-    console.log(`消息持久化文件: ${DATA_FILE}`);
-    console.log(`上传目录: ${UPLOAD_ROOT}`);
+    console.log(`数据存储目录: ${STORAGE_ROOT}`);
     console.log(`孤儿文件清理间隔: ${FILE_CLEANUP_INTERVAL_MINUTES} 分钟`);
   });
 }

@@ -5,6 +5,7 @@
 ## 功能特性
 
 - 默认无密码开放访问，可选密码保护
+- **支持多用户模式，密码隔离数据**
 - 聊天框式消息展示，支持滚动加载历史消息
 - WebSocket 实时同步，断线重连自动补齐消息
 - 文本消息发送与一键复制
@@ -30,10 +31,18 @@ docker run -d \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 
-# 启用密码保护
+# 启用密码保护（单用户模式）
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORD=你的密码 \
+  -v web-clipboard-data:/app/data \
+  --name web-clipboard \
+  aichenk/web-clipboard:latest
+
+# 多用户模式（密码隔离数据）
+docker run -d \
+  -p 3000:3000 \
+  -e ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3 \
   -v web-clipboard-data:/app/data \
   --name web-clipboard \
   aichenk/web-clipboard:latest
@@ -49,10 +58,12 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # 单用户模式
       - ACCESS_PASSWORD=你的密码
+      # 多用户模式（取消注释使用）
+      # - ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
+      # - MIGRATE_DEFAULT_USER=user1  # 迁移单用户数据到指定用户
       - EXPIRE_HOURS=168
-      - DATA_FILE=/app/data/messages.json
-      - UPLOAD_ROOT=/app/data/uploads
       - FILE_CLEANUP_INTERVAL_MINUTES=30
     restart: unless-stopped
     volumes:
@@ -77,14 +88,53 @@ npm start
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `PORT` | 服务端口 | `3000` |
-| `ACCESS_PASSWORD` | 访问密码（留空则无密码模式） | 空（无密码） |
+| `ACCESS_PASSWORD` | 单用户模式访问密码（留空则无密码模式） | 空（无密码） |
+| `ACCESS_PASSWORDS` | 多用户模式密码映射（格式：`userId:password,userId:password`） | 空 |
+| `MIGRATE_DEFAULT_USER` | 迁移单用户数据到指定用户（仅多用户模式首次启动） | 空 |
 | `EXPIRE_HOURS` | 数据过期时间（小时） | `168`（7天） |
 | `MESSAGE_PAGE_SIZE` | 分页加载每页数量 | `30` |
 | `SOCKET_SYNC_LIMIT` | Socket 首次同步数量 | `20` |
-| `DATA_FILE` | 服务端消息持久化文件路径 | `./data/messages.json` |
-| `STORAGE_ROOT` | 数据根目录（默认包含消息/上传） | `./data` |
-| `UPLOAD_ROOT` | 上传文件根目录 | `./data/uploads` |
+| `STORAGE_ROOT` | 数据根目录 | `./data` |
 | `FILE_CLEANUP_INTERVAL_MINUTES` | 孤儿文件清理间隔（分钟） | `30` |
+
+## 运行模式
+
+### 单用户模式
+
+使用 `ACCESS_PASSWORD` 环境变量设置密码。数据存储在 `data/messages.json` 和 `data/uploads/`。
+
+### 多用户模式
+
+使用 `ACCESS_PASSWORDS` 环境变量设置密码映射：
+
+```
+ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
+```
+
+每个用户的数据独立存储在：
+- `data/users/user1/messages.json`
+- `data/users/user1/uploads/`
+
+用户输入密码后，系统自动识别用户身份，数据完全隔离。
+
+### 从单用户迁移到多用户
+
+如果之前使用单用户模式，切换到多用户模式时：
+
+1. 设置 `MIGRATE_DEFAULT_USER` 指定迁移目标用户
+2. 系统会自动将 `data/messages.json` 和 `data/uploads/` 迁移到目标用户目录
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -e ACCESS_PASSWORDS=user1:pass1,user2:pass2 \
+  -e MIGRATE_DEFAULT_USER=user1 \
+  -v web-clipboard-data:/app/data \
+  --name web-clipboard \
+  aichenk/web-clipboard:latest
+```
+
+如果不设置 `MIGRATE_DEFAULT_USER`，单用户数据会保留在磁盘但不会被读取。
 
 ## 使用说明
 
@@ -103,6 +153,13 @@ npm start
 
 > [查看完整更新日志](CHANGELOG.md)
 
+### 1.4.0（2026-04-08）
+
+- 新增多用户模式：通过不同密码隔离数据，每个用户独立存储空间。
+- 新增数据迁移：支持从单用户模式自动迁移。
+- 修复图片懒加载导致页面打开时不能自动滚动到底部问题。
+- 修复密码访问界面无法展示版本号问题。
+
 ### 1.3.2（2026-04-06）
 
 - 修复上传进度条挤占按钮布局问题。
@@ -111,12 +168,6 @@ npm start
 
 - 优化文件/图片上传：改用 FormData 方式，避免 base64 编码导致的 33% 体积膨胀。
 - 进度条显示真实文件大小，不再显示编码后的膨胀体积。
-
-### 1.3.0（2026-04-06）
-
-- 新增拖放上传功能：支持拖放图片和文件到输入区域直接上传。
-- 新增上传进度条：实时显示上传进度、已上传大小和总大小。
-- 新增上传取消功能：上传过程中可点击取消按钮中断上传。
 
 ## 技术栈
 
