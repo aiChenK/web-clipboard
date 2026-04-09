@@ -333,6 +333,13 @@ function createMessageElement(msg, isFavoritesView = false) {
   }
 
   actionsEl.appendChild(favoriteBtn);
+
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'btn btn-secondary message-share-action';
+  shareBtn.textContent = '分享';
+  shareBtn.addEventListener('click', () => openShareModal(msg));
+  actionsEl.appendChild(shareBtn);
+
   actionsEl.appendChild(deleteBtn);
   messageEl.appendChild(actionsEl);
   return messageEl;
@@ -1344,3 +1351,235 @@ dropZone.addEventListener('drop', handleDrop);
 loadVersion();
 
 checkAuth();
+
+// ========== 分享功能 ==========
+const shareModal = document.getElementById('share-modal');
+const shareExpiresSelect = document.getElementById('share-expires');
+const sharePasswordInput = document.getElementById('share-password');
+const shareCancelBtn = document.getElementById('share-cancel');
+const shareCreateBtn = document.getElementById('share-create');
+const shareResult = document.getElementById('share-result');
+const shareLinkInput = document.getElementById('share-link');
+const shareCopyLinkBtn = document.getElementById('share-copy-link');
+const shareInfo = document.getElementById('share-info');
+const shareForm = document.querySelector('.share-form');
+
+let currentShareMessage = null;
+
+function openShareModal(msg) {
+  currentShareMessage = msg;
+  sharePasswordInput.value = '';
+  shareExpiresSelect.value = '168';
+  shareForm.classList.remove('hidden');
+  shareResult.classList.add('hidden');
+  shareModal.classList.remove('hidden');
+}
+
+function closeShareModal() {
+  shareModal.classList.add('hidden');
+  currentShareMessage = null;
+}
+
+async function createShare() {
+  if (!currentShareMessage) return;
+
+  const expiresHours = parseInt(shareExpiresSelect.value, 10);
+  const password = sharePasswordInput.value.trim() || null;
+
+  try {
+    shareCreateBtn.disabled = true;
+    shareCreateBtn.textContent = '创建中...';
+
+    const payload = {
+      messageId: currentShareMessage.id,
+      expiresHours
+    };
+
+    if (currentMode === 'multi' && userId) {
+      payload.userId = userId;
+    }
+
+    if (password) {
+      payload.password = password;
+    }
+
+    const response = await fetch('/api/share', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || '创建分享失败');
+    }
+
+    // 显示分享结果
+    shareForm.classList.add('hidden');
+    shareResult.classList.remove('hidden');
+
+    const shareUrl = window.location.origin + data.shareUrl;
+    shareLinkInput.value = shareUrl;
+
+    const expiresDate = new Date(data.expiresAt);
+    const expiresStr = expiresDate.toLocaleString('zh-CN');
+    const passwordInfo = data.hasPassword ? '（需要密码）' : '';
+    shareInfo.textContent = `链接将在 ${expiresStr} 过期${passwordInfo}`;
+
+    showToast('分享链接已创建');
+  } catch (error) {
+    showToast(error.message || '创建分享失败');
+    console.error(error);
+  } finally {
+    shareCreateBtn.disabled = false;
+    shareCreateBtn.textContent = '创建分享';
+  }
+}
+
+async function copyShareLink() {
+  try {
+    await navigator.clipboard.writeText(shareLinkInput.value);
+    showToast('链接已复制到剪贴板');
+  } catch (error) {
+    shareLinkInput.select();
+    document.execCommand('copy');
+    showToast('链接已复制');
+  }
+}
+
+shareCancelBtn.addEventListener('click', closeShareModal);
+shareCreateBtn.addEventListener('click', createShare);
+shareCopyLinkBtn.addEventListener('click', copyShareLink);
+
+shareModal.addEventListener('click', (e) => {
+  if (e.target === shareModal) {
+    closeShareModal();
+  }
+});
+
+// ========== 分享列表管理 ==========
+const shareListModal = document.getElementById('share-list-modal');
+const shareListContainer = document.getElementById('share-list-container');
+const shareListCloseBtn = document.getElementById('share-list-close');
+const mySharesBtn = document.getElementById('my-shares-btn');
+
+function openShareListModal() {
+  shareListModal.classList.remove('hidden');
+  loadShareList();
+}
+
+function closeShareListModal() {
+  shareListModal.classList.add('hidden');
+}
+
+async function loadShareList() {
+  shareListContainer.innerHTML = '<div class="share-list-loading">加载中...</div>';
+
+  try {
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+
+    const response = await fetch(`/api/share/list?${params.toString()}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || '获取分享列表失败');
+    }
+
+    renderShareList(data.shares || []);
+  } catch (error) {
+    shareListContainer.innerHTML = `<div class="share-list-error">${error.message}</div>`;
+  }
+}
+
+function renderShareList(shares) {
+  if (shares.length === 0) {
+    shareListContainer.innerHTML = `
+      <div class="share-list-empty">
+        <p>暂无分享</p>
+        <p style="font-size: 0.85rem; color: #888;">点击消息旁的「分享」按钮创建分享链接</p>
+      </div>
+    `;
+    return;
+  }
+
+  const html = shares.map((share) => {
+    const expiresDate = new Date(share.expiresAt);
+    const expiresStr = expiresDate.toLocaleString('zh-CN');
+    const passwordIcon = share.hasPassword ? ' 🔒' : '';
+    const shareUrl = `${window.location.origin}/share/${share.shareId}`;
+
+    return `
+      <div class="share-list-item" data-share-id="${share.shareId}">
+        <div class="share-list-item-info">
+          <div class="share-list-item-id">分享 ID: ${share.shareId.slice(0, 8)}...${passwordIcon}</div>
+          <div class="share-list-item-meta">
+            <span>过期: ${expiresStr}</span>
+            <span>访问: ${share.viewCount} 次</span>
+          </div>
+        </div>
+        <div class="share-list-item-actions">
+          <button class="btn btn-small btn-secondary share-copy-url-btn" data-url="${shareUrl}">复制链接</button>
+          <button class="btn btn-small btn-danger share-cancel-btn" data-share-id="${share.shareId}">取消分享</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  shareListContainer.innerHTML = html;
+
+  // 绑定事件
+  shareListContainer.querySelectorAll('.share-copy-url-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const url = btn.dataset.url;
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('链接已复制');
+      } catch {
+        showToast('复制失败');
+      }
+    });
+  });
+
+  shareListContainer.querySelectorAll('.share-cancel-btn').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const shareId = btn.dataset.shareId;
+      await cancelShare(shareId);
+    });
+  });
+}
+
+async function cancelShare(shareId) {
+  try {
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+
+    const response = await fetch(`/api/share/${shareId}?${params.toString()}`, {
+      method: 'DELETE'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || '取消分享失败');
+    }
+
+    showToast('分享已取消');
+    loadShareList();
+  } catch (error) {
+    showToast(error.message);
+  }
+}
+
+mySharesBtn.addEventListener('click', openShareListModal);
+shareListCloseBtn.addEventListener('click', closeShareListModal);
+shareListModal.addEventListener('click', (e) => {
+  if (e.target === shareListModal) {
+    closeShareListModal();
+  }
+});

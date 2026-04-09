@@ -6,6 +6,7 @@ const { getUserUploadRoot } = require('../storage');
 const authRoutes = require('./auth');
 const messagesRoutes = require('./messages');
 const favoritesRoutes = require('./favorites');
+const shareRoutes = require('./share');
 
 // 设置静态文件路由（上传文件）
 function setupUploadRoutes(app) {
@@ -34,6 +35,9 @@ function setupApiRoutes(app) {
 
   // 兼容旧的路由 /api/favorites
   app.use('/api', favoritesRoutes);
+
+  // 分享路由
+  app.use('/api/share', shareRoutes);
 }
 
 // 设置所有路由
@@ -51,6 +55,11 @@ function setupRoutes(app) {
 
   // API 路由
   setupApiRoutes(app);
+
+  // 分享页面路由（需要在 API 路由之后，静态文件之前已处理）
+  app.get('/share/:shareId', (req, res) => {
+    res.sendFile(path.join(publicPath, 'share.html'));
+  });
 }
 
 module.exports = {

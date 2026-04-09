@@ -13,6 +13,10 @@ const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '..', 'dat
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(STORAGE_ROOT, 'uploads');
 const FILE_CLEANUP_INTERVAL_MINUTES = Number.parseInt(process.env.FILE_CLEANUP_INTERVAL_MINUTES, 10) || 30;
 
+// 分享功能配置
+const SHARE_MAX_EXPIRE_HOURS = Number.parseInt(process.env.SHARE_MAX_EXPIRE_HOURS, 10) || 168;
+const SHARE_DIR = path.join(STORAGE_ROOT, 'shares');
+
 // 获取版本号
 function getAppVersion() {
   try {
@@ -123,6 +127,10 @@ module.exports = {
   UPLOAD_ROOT,
   FILE_CLEANUP_INTERVAL_MINUTES,
   APP_VERSION,
+
+  // 分享配置
+  SHARE_MAX_EXPIRE_HOURS,
+  SHARE_DIR,
 
   // 计算常量
   EXPIRE_TIME,

@@ -8,6 +8,7 @@ const { getUploadRoot, getUserUploadRoot, getDataFile, SINGLE_USER_DATA_FILE } =
 const { uploadMiddleware, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
 const { toPublicMessage, persistImageContent, persistFileContent } = require('../message');
 const { createMessageId, toDateFolder, sanitizeFilename, extensionFromMime, ensureDir, toPosixPath, normalizeImageIncomingContent, decodeDataUrl } = require('../utils');
+const { deleteSharesByMessageId } = require('../share');
 
 const router = express.Router();
 
@@ -233,6 +234,9 @@ router.delete('/:id', extractUserId, async (req, res) => {
 
   await deleteMessageFiles(removed, userId);
 
+  // 删除该消息相关的所有分享
+  await deleteSharesByMessageId(id, userId);
+
   req.app.get('io').broadcastDelete(userId, id);
 
   return res.json({ success: true });
@@ -251,6 +255,9 @@ router.post('/clear', extractUserId, async (req, res) => {
   schedulePersist(userId);
 
   await Promise.allSettled(removedMessages.map((msg) => deleteMessageFiles(msg, userId)));
+
+  // 删除被清空消息的所有相关分享
+  await Promise.allSettled(removedMessages.map((msg) => deleteSharesByMessageId(msg.id, userId)));
 
   req.app.get('io').broadcastClear(userId, { favoriteCount: favoriteMessages.length });
 

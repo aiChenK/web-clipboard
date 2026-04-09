@@ -83,6 +83,7 @@
         <span id="connection-status" class="status connected">已连接</span>
         <span id="expire-info"></span>
         <span id="message-count">0 条消息</span>
+        <button id="my-shares-btn" class="btn btn-small btn-secondary" type="button">我的分享</button>
         <button id="logout-btn" class="btn btn-small btn-secondary" type="button">退出</button>
       </div>
     </div>
@@ -96,6 +97,51 @@
       <div class="modal-actions">
         <button id="modal-cancel" class="btn btn-secondary">取消</button>
         <button id="modal-confirm" class="btn btn-danger">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="share-modal" class="modal hidden">
+    <div class="modal-content share-modal-content">
+      <h3 class="share-modal-title">创建分享链接</h3>
+      <div class="share-form">
+        <div class="share-form-group">
+          <label for="share-expires">过期时间</label>
+          <select id="share-expires" class="share-select">
+            <option value="1">1 小时</option>
+            <option value="6">6 小时</option>
+            <option value="24">24 小时</option>
+            <option value="72">3 天</option>
+            <option value="168" selected>7 天</option>
+          </select>
+        </div>
+        <div class="share-form-group">
+          <label for="share-password">访问密码（可选）</label>
+          <input type="text" id="share-password" class="share-input" placeholder="留空则无需密码">
+        </div>
+        <div class="share-actions">
+          <button id="share-cancel" class="btn btn-secondary">取消</button>
+          <button id="share-create" class="btn btn-primary">创建分享</button>
+        </div>
+      </div>
+      <div id="share-result" class="share-result hidden">
+        <div class="share-link-container">
+          <input type="text" id="share-link" class="share-link-input" readonly>
+          <button id="share-copy-link" class="btn btn-primary">复制链接</button>
+        </div>
+        <p class="share-info" id="share-info"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="share-list-modal" class="modal hidden">
+    <div class="modal-content share-list-modal-content">
+      <h3 class="share-modal-title">我的分享</h3>
+      <div id="share-list-container" class="share-list-container">
+        <div class="share-list-loading">加载中...</div>
+      </div>
+      <div class="share-list-actions">
+        <button id="share-list-close" class="btn btn-secondary">关闭</button>
       </div>
     </div>
   </div>

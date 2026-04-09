@@ -1,4 +1,5 @@
 const fs = require('fs/promises');
+const path = require('path');
 const {
   PORT,
   MULTI_USER_MODE,
@@ -15,9 +16,36 @@ const { loadPersistedState, migrateLegacyData, SINGLE_USER_DATA_FILE } = require
 const { cleanupOrphanDiskFiles } = require('./src/cleanup');
 const { startCleanupSchedulers } = require('./src/cleanup');
 const { createApp } = require('./src/app');
+const { deleteAllShares, SHARE_DIR } = require('./src/share');
+
+const MODE_FILE = path.join(STORAGE_ROOT, '.mode');
+
+// 检查并处理运行模式变化
+async function checkModeChange() {
+  const currentMode = MULTI_USER_MODE ? 'multi' : 'single';
+
+  try {
+    const savedMode = await fs.readFile(MODE_FILE, 'utf8').catch(() => null);
+
+    if (savedMode && savedMode.trim() !== currentMode) {
+      console.log(`检测到运行模式变化: ${savedMode.trim()} -> ${currentMode}`);
+      console.log('清理所有分享数据...');
+      await deleteAllShares();
+    }
+
+    // 保存当前模式
+    await ensureDir(STORAGE_ROOT);
+    await fs.writeFile(MODE_FILE, currentMode, 'utf8');
+  } catch (error) {
+    console.error('检查模式变化失败:', error);
+  }
+}
 
 async function start() {
   await ensureDir(STORAGE_ROOT);
+
+  // 检查运行模式变化
+  await checkModeChange();
 
   // 多用户模式
   if (MULTI_USER_MODE) {

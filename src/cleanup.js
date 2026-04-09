@@ -4,6 +4,7 @@ const { MULTI_USER_MODE, EXPIRE_TIME, STORAGE_ROOT, FILE_CLEANUP_INTERVAL_MINUTE
 const { getUserState, getUploadRoot, schedulePersist } = require('./storage');
 const { deleteMessageFiles, getMessageFileRefs } = require('./upload');
 const { toPosixPath } = require('./utils');
+const { cleanupExpiredShares } = require('./share');
 
 let cleanupRunning = false;
 
@@ -176,6 +177,7 @@ async function cleanupAllUsersOrphanFiles() {
 function startCleanupSchedulers() {
   setInterval(cleanupAllUsersExpiredData, 5 * 60 * 1000);
   setInterval(cleanupAllUsersOrphanFiles, FILE_CLEANUP_INTERVAL_MINUTES * 60 * 1000);
+  setInterval(cleanupExpiredShares, 5 * 60 * 1000);
 }
 
 module.exports = {
