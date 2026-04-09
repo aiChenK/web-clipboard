@@ -464,6 +464,20 @@ async function migrateLegacyData(targetUserId) {
     return false;
   }
 
+  // 检查目标文件是否已存在，避免覆盖已有数据
+  try {
+    const targetStat = await fs.stat(targetFile);
+    if (targetStat.size > 0) {
+      console.log(`目标用户数据已存在，跳过迁移: ${targetFile}`);
+      // 删除遗留的单用户数据文件，避免后续重复检查
+      await fs.unlink(legacyFile);
+      console.log(`已删除遗留的单用户数据文件: ${legacyFile}`);
+      return false;
+    }
+  } catch {
+    // 目标文件不存在，可以继续迁移
+  }
+
   // 确保目标目录存在
   await ensureDir(targetDir);
 
