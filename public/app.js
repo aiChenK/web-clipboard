@@ -21,6 +21,7 @@ const fileInput = document.getElementById('file-input');
 const pasteImageBtn = document.getElementById('paste-image');
 const clearAllBtn = document.getElementById('clear-all');
 const logoutBtn = document.getElementById('logout-btn');
+const currentUserEl = document.getElementById('current-user');
 const connectionStatus = document.getElementById('connection-status');
 const messageCount = document.getElementById('message-count');
 const expireInfo = document.getElementById('expire-info');
@@ -418,8 +419,10 @@ function enterChatMode() {
   authSection.classList.add('hidden');
   chatSection.classList.remove('hidden');
 
-  // 多用户模式：加入 Socket.IO 房间
+  // 多用户模式下显示当前用户
   if (currentMode === 'multi' && userId) {
+    currentUserEl.textContent = `👤 ${userId}`;
+    currentUserEl.classList.remove('hidden');
     socket.emit('join', userId);
   }
 

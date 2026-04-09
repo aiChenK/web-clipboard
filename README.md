@@ -5,7 +5,7 @@
 ## 功能特性
 
 - 默认无密码开放访问，可选密码保护
-- **支持多用户模式，密码隔离数据**
+- **支持多用户模式，密码隔离数据（v1.4.0+）**
 - 聊天框式消息展示，支持滚动加载历史消息
 - WebSocket 实时同步，断线重连自动补齐消息
 - 文本消息发送与一键复制
@@ -39,7 +39,7 @@ docker run -d \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 
-# 多用户模式（密码隔离数据）
+# 多用户模式（密码隔离数据）**v1.4.0+**
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3 \
@@ -60,7 +60,7 @@ services:
     environment:
       # 单用户模式
       - ACCESS_PASSWORD=你的密码
-      # 多用户模式（取消注释使用）
+      # 多用户模式 **v1.4.0+**（取消注释使用）
       # - ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
       # - MIGRATE_DEFAULT_USER=user1  # 迁移单用户数据到指定用户
       - EXPIRE_HOURS=168
@@ -89,8 +89,8 @@ npm start
 |------|------|--------|
 | `PORT` | 服务端口 | `3000` |
 | `ACCESS_PASSWORD` | 单用户模式访问密码（留空则无密码模式） | 空（无密码） |
-| `ACCESS_PASSWORDS` | 多用户模式密码映射（格式：`userId:password,userId:password`） | 空 |
-| `MIGRATE_DEFAULT_USER` | 迁移单用户数据到指定用户（仅多用户模式首次启动） | 空 |
+| `ACCESS_PASSWORDS` | 多用户模式密码映射（格式：`userId:password,userId:password`）**v1.4.0+** | 空 |
+| `MIGRATE_DEFAULT_USER` | 迁移单用户数据到指定用户（仅多用户模式首次启动）**v1.4.0+** | 空 |
 | `EXPIRE_HOURS` | 数据过期时间（小时） | `168`（7天） |
 | `MESSAGE_PAGE_SIZE` | 分页加载每页数量 | `30` |
 | `SOCKET_SYNC_LIMIT` | Socket 首次同步数量 | `20` |
@@ -103,7 +103,7 @@ npm start
 
 使用 `ACCESS_PASSWORD` 环境变量设置密码。数据存储在 `data/messages.json` 和 `data/uploads/`。
 
-### 多用户模式
+### 多用户模式 **v1.4.0+**
 
 使用 `ACCESS_PASSWORDS` 环境变量设置密码映射：
 
@@ -117,7 +117,7 @@ ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
 
 用户输入密码后，系统自动识别用户身份，数据完全隔离。
 
-### 从单用户迁移到多用户
+### 从单用户迁移到多用户 **v1.4.0+**
 
 如果之前使用单用户模式，切换到多用户模式时：
 
@@ -152,22 +152,6 @@ docker run -d \
 ## 更新日志
 
 > [查看完整更新日志](CHANGELOG.md)
-
-### 1.4.0（2026-04-08）
-
-- 新增多用户模式：通过不同密码隔离数据，每个用户独立存储空间。
-- 新增数据迁移：支持从单用户模式自动迁移。
-- 修复图片懒加载导致页面打开时不能自动滚动到底部问题。
-- 修复密码访问界面无法展示版本号问题。
-
-### 1.3.2（2026-04-06）
-
-- 修复上传进度条挤占按钮布局问题。
-
-### 1.3.1（2026-04-06）
-
-- 优化文件/图片上传：改用 FormData 方式，避免 base64 编码导致的 33% 体积膨胀。
-- 进度条显示真实文件大小，不再显示编码后的膨胀体积。
 
 ## 技术栈
 
