@@ -220,6 +220,31 @@ header h1 {
   color: #999;
 }
 
+.message-share-btn {
+  background: transparent;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  color: #999;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.message:hover .message-share-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.message-share-btn:hover {
+  background: #f0f0f0;
+  color: #667eea;
+}
+
 .message-favorite-action {
   display: flex;
   align-items: center;
@@ -563,6 +588,19 @@ header h1 {
   flex-shrink: 0;
 }
 
+.status-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.status-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .status {
   padding: 3px 10px;
   border-radius: 20px;
@@ -570,7 +608,6 @@ header h1 {
 }
 
 #logout-btn {
-  margin-left: auto;
   padding: 4px 10px;
   font-size: 0.75rem;
 }
@@ -718,11 +755,31 @@ header h1 {
   }
 
   .status-bar {
-    flex-wrap: wrap;
+    padding: 8px 12px;
   }
 
-  #logout-btn {
-    margin-left: 0;
+  .status-bar-left {
+    font-size: 0.75rem;
+    gap: 6px;
+  }
+
+  #message-count {
+    display: none;
+  }
+
+  #expire-info {
+    display: none;
+  }
+
+  .share-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .share-list-item-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 }
 

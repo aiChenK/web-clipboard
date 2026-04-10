@@ -241,6 +241,14 @@ function createMessageElement(msg, isFavoritesView = false) {
 
   headerEl.appendChild(timeEl);
 
+  // 分享按钮放在头部右侧
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'message-share-btn';
+  shareBtn.title = '分享';
+  shareBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+  shareBtn.addEventListener('click', () => openShareModal(msg));
+  headerEl.appendChild(shareBtn);
+
   const actionsEl = document.createElement('div');
   actionsEl.className = 'message-actions';
 
@@ -333,13 +341,6 @@ function createMessageElement(msg, isFavoritesView = false) {
   }
 
   actionsEl.appendChild(favoriteBtn);
-
-  const shareBtn = document.createElement('button');
-  shareBtn.className = 'btn btn-secondary message-share-action';
-  shareBtn.textContent = '分享';
-  shareBtn.addEventListener('click', () => openShareModal(msg));
-  actionsEl.appendChild(shareBtn);
-
   actionsEl.appendChild(deleteBtn);
   messageEl.appendChild(actionsEl);
   return messageEl;
