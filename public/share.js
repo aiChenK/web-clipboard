@@ -94,19 +94,8 @@ function renderMessage(msg) {
     img.src = imageData.thumbnail;
     img.alt = '分享图片';
 
-    img.addEventListener('click', async () => {
-      try {
-        const response = await fetch(imageData.thumbnail);
-        const blob = await response.blob();
-        if (typeof ClipboardItem !== 'undefined') {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          showToast('图片已复制到剪贴板');
-        } else {
-          showToast('浏览器不支持复制图片');
-        }
-      } catch {
-        showToast('复制图片失败');
-      }
+    img.addEventListener('click', () => {
+      openImageViewer(imageData);
     });
 
     imgContainer.appendChild(img);
@@ -114,7 +103,7 @@ function renderMessage(msg) {
 
     const hint = document.createElement('p');
     hint.className = 'share-image-hint';
-    hint.textContent = '点击图片复制到剪贴板';
+    hint.textContent = '点击图片查看大图';
     shareMessage.appendChild(hint);
   } else if (msg.type === 'file') {
     const fileData = getFileContent(msg.content);
@@ -274,3 +263,87 @@ sharePasswordInput.addEventListener('keypress', (e) => {
 
 // 初始化
 loadShare();
+
+// ========== 图片查看器 ==========
+const imageViewer = document.getElementById('image-viewer');
+const imageViewerImg = document.getElementById('image-viewer-img');
+const imageViewerOriginalBtn = document.getElementById('image-viewer-original');
+const imageViewerCopyBtn = document.getElementById('image-viewer-copy');
+const imageViewerBackdrop = imageViewer.querySelector('.image-viewer-backdrop');
+const imageViewerCloseBtn = imageViewer.querySelector('.image-viewer-close');
+
+let currentViewerImageData = null;
+let isViewingOriginal = false;
+
+function openImageViewer(imageData) {
+  currentViewerImageData = imageData;
+  isViewingOriginal = false;
+
+  // 显示缩略图
+  imageViewerImg.src = imageData.thumbnail;
+
+  // 分享页面通常只有缩略图，不显示原图按钮
+  imageViewerOriginalBtn.classList.add('hidden');
+
+  imageViewer.classList.remove('hidden');
+}
+
+function closeImageViewer() {
+  imageViewer.classList.add('hidden');
+  imageViewerImg.src = '';
+  currentViewerImageData = null;
+  isViewingOriginal = false;
+}
+
+async function copyViewerImage() {
+  const src = imageViewerImg.src;
+  if (!src) {
+    showToast('没有可复制的图片');
+    return;
+  }
+
+  try {
+    const response = await fetch(src);
+    const blob = await response.blob();
+
+    // 如果不是 PNG，转换为 PNG
+    if (blob.type !== 'image/png') {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = src;
+      });
+
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      ctx.drawImage(img, 0, 0);
+
+      const pngDataUrl = canvas.toDataURL('image/png');
+      const pngResponse = await fetch(pngDataUrl);
+      blob = await pngResponse.blob();
+    }
+
+    if (typeof ClipboardItem !== 'undefined') {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      showToast('图片已复制到剪贴板');
+    } else {
+      showToast('浏览器不支持复制图片');
+    }
+  } catch {
+    showToast('复制图片失败');
+  }
+}
+
+imageViewerBackdrop.addEventListener('click', closeImageViewer);
+imageViewerCloseBtn.addEventListener('click', closeImageViewer);
+imageViewerCopyBtn.addEventListener('click', copyViewerImage);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) {
+    closeImageViewer();
+  }
+});

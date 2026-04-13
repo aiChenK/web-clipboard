@@ -212,10 +212,7 @@ function createImageContent(msg) {
   });
 
   img.addEventListener('click', () => {
-    copyImageToClipboard(thumbnailUrl, {
-      successToast: '图片已复制到剪贴板',
-      failureToast: '复制图片失败'
-    });
+    openImageViewer(msg);
   });
 
   wrapper.appendChild(placeholder);
@@ -1604,5 +1601,91 @@ shareListCloseBtn.addEventListener('click', closeShareListModal);
 shareListModal.addEventListener('click', (e) => {
   if (e.target === shareListModal) {
     closeShareListModal();
+  }
+});
+
+// ========== 图片查看器 ==========
+const imageViewer = document.getElementById('image-viewer');
+const imageViewerImg = document.getElementById('image-viewer-img');
+const imageViewerOriginalBtn = document.getElementById('image-viewer-original');
+const imageViewerCopyBtn = document.getElementById('image-viewer-copy');
+const imageViewerBackdrop = imageViewer.querySelector('.image-viewer-backdrop');
+const imageViewerCloseBtn = imageViewer.querySelector('.image-viewer-close');
+
+let currentViewerMessage = null;
+let isViewingOriginal = false;
+
+function openImageViewer(msg) {
+  currentViewerMessage = msg;
+  isViewingOriginal = false;
+
+  const imageData = getImageContent(msg.content);
+
+  // 显示缩略图
+  imageViewerImg.src = imageData.thumbnail;
+
+  // 如果有原图，显示原图按钮
+  if (imageData.hasOriginal) {
+    imageViewerOriginalBtn.classList.remove('hidden');
+    imageViewerOriginalBtn.textContent = '查看原图';
+  } else {
+    imageViewerOriginalBtn.classList.add('hidden');
+  }
+
+  imageViewer.classList.remove('hidden');
+}
+
+function closeImageViewer() {
+  imageViewer.classList.add('hidden');
+  imageViewerImg.src = '';
+  currentViewerMessage = null;
+  isViewingOriginal = false;
+}
+
+async function viewOriginalImage() {
+  if (!currentViewerMessage) return;
+
+  const imageData = getImageContent(currentViewerMessage.content);
+  if (!imageData.hasOriginal) return;
+
+  imageViewerOriginalBtn.disabled = true;
+  imageViewerOriginalBtn.textContent = '加载中...';
+
+  try {
+    const original = await fetchOriginalImageWithTimeout(currentViewerMessage.id, ORIGINAL_FETCH_TIMEOUT);
+    imageViewerImg.src = original;
+    isViewingOriginal = true;
+    imageViewerOriginalBtn.textContent = '当前原图';
+  } catch (error) {
+    console.error('加载原图失败:', error);
+    showToast('加载原图失败');
+    imageViewerOriginalBtn.textContent = '查看原图';
+  } finally {
+    imageViewerOriginalBtn.disabled = false;
+  }
+}
+
+async function copyViewerImage() {
+  const src = imageViewerImg.src;
+  if (!src) {
+    showToast('没有可复制的图片');
+    return;
+  }
+
+  const successToast = isViewingOriginal ? '原图已复制到剪贴板' : '图片已复制到剪贴板';
+  await copyImageToClipboard(src, {
+    successToast,
+    failureToast: '复制图片失败'
+  });
+}
+
+imageViewerBackdrop.addEventListener('click', closeImageViewer);
+imageViewerCloseBtn.addEventListener('click', closeImageViewer);
+imageViewerOriginalBtn.addEventListener('click', viewOriginalImage);
+imageViewerCopyBtn.addEventListener('click', copyViewerImage);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) {
+    closeImageViewer();
   }
 });

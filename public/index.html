@@ -150,6 +150,19 @@
     </div>
   </div>
 
+  <div id="image-viewer" class="image-viewer hidden">
+    <div class="image-viewer-backdrop"></div>
+    <div class="image-viewer-content">
+      <button class="image-viewer-close" title="关闭">×</button>
+      <img id="image-viewer-img" class="image-viewer-img" alt="大图">
+      <div class="image-viewer-actions">
+        <button id="image-viewer-original" class="btn btn-secondary hidden">查看原图</button>
+        <button id="image-viewer-copy" class="btn btn-secondary">复制图片</button>
+      </div>
+      <p class="image-viewer-hint">点击背景或按 ESC 关闭</p>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
   <script src="app.js"></script>
 </body>
