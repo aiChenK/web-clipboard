@@ -476,6 +476,9 @@ async function loadFavorites() {
     if (!response.ok) return;
     const data = await response.json();
     favorites = data.messages || [];
+    if (currentTab === 'favorites') {
+      renderFavorites();
+    }
   } catch (error) {
     console.error('加载收藏失败:', error);
   }

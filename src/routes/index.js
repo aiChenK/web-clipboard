@@ -34,7 +34,7 @@ function setupApiRoutes(app) {
   app.use('/api/messages', favoritesRoutes);
 
   // 兼容旧的路由 /api/favorites
-  app.use('/api', favoritesRoutes);
+  app.use('/api/favorites', favoritesRoutes);
 
   // 分享路由
   app.use('/api/share', shareRoutes);
