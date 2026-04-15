@@ -332,7 +332,11 @@ function createMessageElement(msg, isFavoritesView = false) {
     downloadBtn.className = 'btn btn-secondary';
     downloadBtn.textContent = '下载文件';
     downloadBtn.addEventListener('click', () => {
-      window.open(`/api/messages/${msg.id}/file-download`, '_blank', 'noopener');
+      const params = new URLSearchParams();
+      if (currentMode === 'multi' && userId) {
+        params.set('userId', userId);
+      }
+      window.open(`/api/messages/${msg.id}/file-download?${params.toString()}`, '_blank', 'noopener');
     });
     actionsEl.appendChild(downloadBtn);
   }
