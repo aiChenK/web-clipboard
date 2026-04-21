@@ -12,19 +12,22 @@ let cleanupRunning = false;
 function cleanupExpiredData(userId = null) {
   const state = getUserState(userId);
   const now = Date.now();
-  if (now - state.lastActivity <= EXPIRE_TIME) {
-    return;
-  }
+  const keptMessages = [];
+  const expiredMessages = [];
 
-  const favoriteMessages = state.messages.filter((msg) => msg.favorite);
-  const expiredMessages = state.messages.filter((msg) => !msg.favorite);
+  for (const msg of state.messages) {
+    if (msg.favorite || now - msg.timestamp <= EXPIRE_TIME) {
+      keptMessages.push(msg);
+    } else {
+      expiredMessages.push(msg);
+    }
+  }
 
   if (expiredMessages.length === 0) {
     return;
   }
 
-  state.messages = favoriteMessages;
-  state.lastActivity = now;
+  state.messages = keptMessages;
   schedulePersist(userId);
 
   Promise.allSettled(expiredMessages.map((msg) => deleteMessageFiles(msg, userId))).catch((error) => {
