@@ -40,6 +40,22 @@ function createMessageId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
+// 解码文件名（处理 multipart 上传时的编码问题）
+function decodeFilename(originalname) {
+  if (!originalname || typeof originalname !== 'string') {
+    return 'file';
+  }
+  try {
+    const latin1Buffer = Buffer.from(originalname, 'latin1');
+    const utf8String = latin1Buffer.toString('utf8');
+    if (utf8String && !utf8String.includes('\ufffd')) {
+      return utf8String;
+    }
+  } catch (e) {
+  }
+  return originalname;
+}
+
 // 清理文件名
 function sanitizeFilename(filename) {
   if (typeof filename !== 'string' || !filename.trim()) {
@@ -122,6 +138,7 @@ module.exports = {
   toDateFolder,
   createMessageId,
   sanitizeFilename,
+  decodeFilename,
   extensionFromMime,
   decodeDataUrl,
   normalizeImageIncomingContent,

@@ -7,7 +7,7 @@ const { getUserState, getMessagesPage, schedulePersist } = require('../storage')
 const { getUploadRoot, getUserUploadRoot, getDataFile, SINGLE_USER_DATA_FILE } = require('../storage');
 const { uploadMiddleware, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
 const { toPublicMessage, persistImageContent, persistFileContent } = require('../message');
-const { createMessageId, toDateFolder, sanitizeFilename, extensionFromMime, ensureDir, toPosixPath, normalizeImageIncomingContent, decodeDataUrl } = require('../utils');
+const { createMessageId, toDateFolder, sanitizeFilename, decodeFilename, extensionFromMime, ensureDir, toPosixPath, normalizeImageIncomingContent, decodeDataUrl } = require('../utils');
 const { deleteSharesByMessageId } = require('../share');
 
 const router = express.Router();
@@ -92,7 +92,8 @@ router.post('/upload', uploadMiddleware.single('file'), async (req, res) => {
   const id = createMessageId();
   const category = type === 'image' ? 'images' : 'files';
   const dateDir = toDateFolder();
-  const safeName = sanitizeFilename(req.file.originalname || 'file');
+  const decodedName = decodeFilename(req.file.originalname || 'file');
+  const safeName = sanitizeFilename(decodedName);
   const parsed = path.parse(safeName);
   const ext = parsed.ext || extensionFromMime(req.file.mimetype) || '';
   const suffix = type === 'image' ? '-orig' : '';
