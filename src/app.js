@@ -7,6 +7,7 @@ const { setupSocket, socketHelper } = require('./socket');
 // 创建 Express 应用
 function createApp() {
   const app = express();
+  app.set('trust proxy', 1); // 支持反向代理，获取真实客户端 IP
   const server = http.createServer(app);
 
   // 创建 Socket.io 服务器

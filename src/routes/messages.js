@@ -2,7 +2,7 @@ const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
 const { MULTI_USER_MODE, EXPIRE_HOURS } = require('../config');
-const { extractUserId } = require('./auth');
+const { requireAuth } = require('../middleware/auth');
 const { getUserState, getMessagesPage, schedulePersist } = require('../storage');
 const { getUploadRoot, getUserUploadRoot, getDataFile, SINGLE_USER_DATA_FILE } = require('../storage');
 const { uploadMiddleware, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
@@ -13,7 +13,7 @@ const { deleteSharesByMessageId } = require('../share');
 const router = express.Router();
 
 // 获取消息列表
-router.get('/', extractUserId, (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   const userId = req.userId;
   const before = Number(req.query.before);
   const limit = Number(req.query.limit);
@@ -27,7 +27,7 @@ router.get('/', extractUserId, (req, res) => {
 });
 
 // 创建消息（文本）
-router.post('/', extractUserId, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { type, content } = req.body;
@@ -74,12 +74,12 @@ router.post('/', extractUserId, async (req, res) => {
 });
 
 // multipart/form-data 上传
-router.post('/upload', uploadMiddleware.single('file'), async (req, res) => {
+router.post('/upload', requireAuth, uploadMiddleware.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: '缺少文件' });
   }
 
-  const userId = req.body.userId || null;
+  const userId = req.userId;
   const state = getUserState(userId);
   const uploadRoot = getUploadRoot(userId);
 
@@ -150,7 +150,7 @@ router.post('/upload', uploadMiddleware.single('file'), async (req, res) => {
 });
 
 // 获取原图
-router.get('/:id/image-original', extractUserId, async (req, res) => {
+router.get('/:id/image-original', requireAuth, async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { id } = req.params;
@@ -189,7 +189,7 @@ router.get('/:id/image-original', extractUserId, async (req, res) => {
 });
 
 // 文件下载
-router.get('/:id/file-download', extractUserId, async (req, res) => {
+router.get('/:id/file-download', requireAuth, async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { id } = req.params;
@@ -219,7 +219,7 @@ router.get('/:id/file-download', extractUserId, async (req, res) => {
 });
 
 // 删除消息
-router.delete('/:id', extractUserId, async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { id } = req.params;
@@ -244,7 +244,7 @@ router.delete('/:id', extractUserId, async (req, res) => {
 });
 
 // 清空消息
-router.post('/clear', extractUserId, async (req, res) => {
+router.post('/clear', requireAuth, async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
 

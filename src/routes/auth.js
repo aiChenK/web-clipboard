@@ -1,5 +1,6 @@
 const express = require('express');
 const { MULTI_USER_MODE, ACCESS_PASSWORD, APP_VERSION, userPasswordMap } = require('../config');
+const { authLimiter } = require('../middleware/rateLimit');
 
 const router = express.Router();
 
@@ -14,7 +15,7 @@ function extractUserId(req, res, next) {
 }
 
 // 认证 API
-router.post('/auth', (req, res) => {
+router.post('/auth', authLimiter, (req, res) => {
   const { password } = req.body;
 
   if (MULTI_USER_MODE) {

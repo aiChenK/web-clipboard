@@ -1,4 +1,12 @@
-const socket = io();
+const socket = io({
+  autoConnect: false,
+  auth: (cb) => {
+    cb({
+      password: localStorage.getItem('web-clipboard-password') || '',
+      userId: localStorage.getItem('web-clipboard-user-id') || ''
+    });
+  }
+});
 
 const PAGE_SIZE = 30;
 const TOP_LOAD_THRESHOLD = 60;
@@ -54,6 +62,25 @@ let currentTab = 'messages';
 let userId = null; // 多用户模式下的用户 ID
 let currentMode = 'single'; // 运行模式: 'single' 或 'multi'
 let shouldStickToBottom = false; // 是否应该保持在底部
+
+// 统一的带凭证 Fetch 拦截包装
+async function authFetch(url, options = {}) {
+  const headers = { ...options.headers };
+  const savedPassword = localStorage.getItem('web-clipboard-password');
+  const savedUserId = localStorage.getItem('web-clipboard-user-id');
+
+  if (savedPassword) {
+    headers['x-access-password'] = savedPassword;
+  }
+  if (savedUserId) {
+    headers['x-user-id'] = savedUserId;
+  }
+
+  return fetch(url, {
+    ...options,
+    headers
+  });
+}
 
 const topLoadingIndicator = document.createElement('div');
 topLoadingIndicator.className = 'messages-top-loading hidden';
@@ -336,6 +363,10 @@ function createMessageElement(msg, isFavoritesView = false) {
       if (currentMode === 'multi' && userId) {
         params.set('userId', userId);
       }
+      const savedPassword = localStorage.getItem('web-clipboard-password');
+      if (savedPassword) {
+        params.set('password', savedPassword);
+      }
       window.open(`/api/messages/${msg.id}/file-download?${params.toString()}`, '_blank', 'noopener');
     });
     actionsEl.appendChild(downloadBtn);
@@ -432,6 +463,11 @@ function enterChatMode() {
   if (currentMode === 'multi' && userId) {
     currentUserEl.textContent = `👤 ${userId}`;
     currentUserEl.classList.remove('hidden');
+  }
+
+  // 延迟启动 Socket 握手连接并加入房间
+  socket.connect();
+  if (currentMode === 'multi' && userId) {
     socket.emit('join', userId);
   }
 
@@ -472,7 +508,7 @@ async function loadFavorites() {
     if (currentMode === 'multi' && userId) {
       params.set('userId', userId);
     }
-    const response = await fetch(`/api/favorites?${params.toString()}`);
+    const response = await authFetch(`/api/favorites?${params.toString()}`);
     if (!response.ok) return;
     const data = await response.json();
     favorites = data.messages || [];
@@ -491,7 +527,7 @@ async function toggleFavorite(id, isFavorite) {
     if (currentMode === 'multi' && userId) {
       params.set('userId', userId);
     }
-    await fetch(`/api/messages/${id}/favorite?${params.toString()}`, { method });
+    await authFetch(`/api/messages/${id}/favorite?${params.toString()}`, { method });
   } catch (error) {
     showToast('收藏操作失败');
     console.error(error);
@@ -518,6 +554,7 @@ function renderFavorites() {
 }
 
 function logout(showMessage = true) {
+  socket.disconnect();
   localStorage.removeItem('web-clipboard-password');
   localStorage.removeItem('web-clipboard-user-id');
   userId = null;
@@ -564,7 +601,7 @@ async function fetchMessagesPage({ before, limit = PAGE_SIZE } = {}) {
     params.set('userId', userId);
   }
 
-  const response = await fetch(`/api/messages?${params.toString()}`);
+  const response = await authFetch(`/api/messages?${params.toString()}`);
   if (!response.ok) {
     throw new Error(`Failed to load messages: ${response.status}`);
   }
@@ -762,10 +799,22 @@ function sendMessageWithProgress(type, content) {
       reject(new Error('上传已取消'));
     });
 
+    const setXhrHeaders = (x) => {
+      const savedPassword = localStorage.getItem('web-clipboard-password');
+      const savedUserId = localStorage.getItem('web-clipboard-user-id');
+      if (savedPassword) {
+        x.setRequestHeader('x-access-password', savedPassword);
+      }
+      if (savedUserId) {
+        x.setRequestHeader('x-user-id', savedUserId);
+      }
+    };
+
     // 文本消息使用原有 JSON API
     if (type === 'text') {
       xhr.open('POST', '/api/messages');
       xhr.setRequestHeader('Content-Type', 'application/json');
+      setXhrHeaders(xhr);
       const payload = { type, content };
       // 多用户模式下添加 userId
       if (currentMode === 'multi' && userId) {
@@ -782,6 +831,7 @@ function sendMessageWithProgress(type, content) {
         formData.append('userId', userId);
       }
       xhr.open('POST', '/api/messages/upload');
+      setXhrHeaders(xhr);
       xhr.send(formData);
     }
   });
@@ -838,7 +888,7 @@ async function deleteMessage(id) {
     if (currentMode === 'multi' && userId) {
       params.set('userId', userId);
     }
-    await fetch(`/api/messages/${id}?${params.toString()}`, {
+    await authFetch(`/api/messages/${id}?${params.toString()}`, {
       method: 'DELETE'
     });
   } catch (error) {
@@ -854,7 +904,7 @@ async function clearAllMessages() {
       if (currentMode === 'multi' && userId) {
         params.set('userId', userId);
       }
-      await fetch(`/api/messages/clear?${params.toString()}`, {
+      await authFetch(`/api/messages/clear?${params.toString()}`, {
         method: 'POST'
       });
       showToast('已清空');
@@ -979,7 +1029,7 @@ async function fetchOriginalImageWithTimeout(id, timeoutMs = ORIGINAL_FETCH_TIME
     if (currentMode === 'multi' && userId) {
       params.set('userId', userId);
     }
-    const response = await fetch(`/api/messages/${id}/image-original?${params.toString()}`, {
+    const response = await authFetch(`/api/messages/${id}/image-original?${params.toString()}`, {
       method: 'GET',
       signal: controller.signal
     });
@@ -1430,7 +1480,7 @@ async function createShare() {
       payload.password = password;
     }
 
-    const response = await fetch('/api/share', {
+    const response = await authFetch('/api/share', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -1509,7 +1559,7 @@ async function loadShareList() {
       params.set('userId', userId);
     }
 
-    const response = await fetch(`/api/share/list?${params.toString()}`);
+    const response = await authFetch(`/api/share/list?${params.toString()}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -1586,7 +1636,7 @@ async function cancelShare(shareId) {
       params.set('userId', userId);
     }
 
-    const response = await fetch(`/api/share/${shareId}?${params.toString()}`, {
+    const response = await authFetch(`/api/share/${shareId}?${params.toString()}`, {
       method: 'DELETE'
     });
 
@@ -1694,5 +1744,14 @@ imageViewerCopyBtn.addEventListener('click', copyViewerImage);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) {
     closeImageViewer();
+  }
+});
+
+// 处理 Socket.IO 连接认证失败
+socket.on('connect_error', (err) => {
+  console.error('Socket 连接失败:', err.message);
+  if (err && err.message && err.message.includes('Authentication error')) {
+    showToast('身份验证失效，请重新登录');
+    logout(false);
   }
 });

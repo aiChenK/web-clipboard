@@ -1,5 +1,5 @@
 const express = require('express');
-const { extractUserId } = require('./auth');
+const { requireAuth } = require('../middleware/auth');
 const { createShare, getShareInfo, verifySharePassword, getShareContent, deleteShare, getShareList } = require('../share');
 const { SHARE_MAX_EXPIRE_HOURS } = require('../config');
 
@@ -13,7 +13,7 @@ router.get('/config', (req, res) => {
 });
 
 // 获取用户的分享列表（必须放在 /:shareId 之前）
-router.get('/list', extractUserId, async (req, res) => {
+router.get('/list', requireAuth, async (req, res) => {
   const userId = req.userId;
 
   try {
@@ -26,7 +26,7 @@ router.get('/list', extractUserId, async (req, res) => {
 });
 
 // 创建分享
-router.post('/', extractUserId, async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   const userId = req.userId;
   const { messageId, password, expiresHours } = req.body;
 
@@ -124,7 +124,7 @@ router.get('/:shareId/content', async (req, res) => {
 });
 
 // 取消分享
-router.delete('/:shareId', extractUserId, async (req, res) => {
+router.delete('/:shareId', requireAuth, async (req, res) => {
   const userId = req.userId;
   const { shareId } = req.params;
 

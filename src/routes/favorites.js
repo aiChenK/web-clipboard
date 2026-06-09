@@ -1,5 +1,5 @@
 const express = require('express');
-const { extractUserId } = require('./auth');
+const { requireAuth } = require('../middleware/auth');
 const { getUserState, schedulePersist } = require('../storage');
 const { toPublicMessage } = require('../message');
 const { MULTI_USER_MODE } = require('../config');
@@ -7,7 +7,7 @@ const { MULTI_USER_MODE } = require('../config');
 const router = express.Router();
 
 // 获取收藏列表
-router.get('/', extractUserId, (req, res) => {
+router.get('/', requireAuth, (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const favorites = state.messages.filter((msg) => msg.favorite);
@@ -18,7 +18,7 @@ router.get('/', extractUserId, (req, res) => {
 });
 
 // 收藏消息
-router.post('/:id/favorite', extractUserId, (req, res) => {
+router.post('/:id/favorite', requireAuth, (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { id } = req.params;
@@ -38,7 +38,7 @@ router.post('/:id/favorite', extractUserId, (req, res) => {
 });
 
 // 取消收藏
-router.delete('/:id/favorite', extractUserId, (req, res) => {
+router.delete('/:id/favorite', requireAuth, (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { id } = req.params;

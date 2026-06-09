@@ -7,6 +7,7 @@ const authRoutes = require('./auth');
 const messagesRoutes = require('./messages');
 const favoritesRoutes = require('./favorites');
 const shareRoutes = require('./share');
+const { apiLimiter } = require('../middleware/rateLimit');
 
 // 设置静态文件路由（上传文件）
 function setupUploadRoutes(app) {
@@ -27,17 +28,17 @@ function setupApiRoutes(app) {
   app.use('/api', authRoutes.router);
 
   // 消息路由（需要在 /api/messages 路径）
-  app.use('/api/messages', messagesRoutes);
+  app.use('/api/messages', apiLimiter, messagesRoutes);
 
   // 收藏路由（需要在 /api/messages 路径，但 favorites.js 已经处理了 /:id/favorite）
   // 所以 favorites 路由需要挂载到 /api/messages
-  app.use('/api/messages', favoritesRoutes);
+  app.use('/api/messages', apiLimiter, favoritesRoutes);
 
   // 兼容旧的路由 /api/favorites
-  app.use('/api/favorites', favoritesRoutes);
+  app.use('/api/favorites', apiLimiter, favoritesRoutes);
 
   // 分享路由
-  app.use('/api/share', shareRoutes);
+  app.use('/api/share', apiLimiter, shareRoutes);
 }
 
 // 设置所有路由

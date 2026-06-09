@@ -1,6 +1,6 @@
 {
   "name": "web-clipboard",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
     "multer": "^2.0.0",
     "socket.io": "^4.8.3"
   }

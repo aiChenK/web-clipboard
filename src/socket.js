@@ -1,4 +1,4 @@
-const { MULTI_USER_MODE, SOCKET_SYNC_LIMIT } = require('./config');
+const { MULTI_USER_MODE, ACCESS_PASSWORD, SOCKET_SYNC_LIMIT, userPasswordMap } = require('./config');
 const { getMessagesPage } = require('./storage');
 const { toPublicMessage } = require('./message');
 
@@ -52,14 +52,45 @@ const socketHelper = {
 function setupSocket(io) {
   socketHelper.setIo(io);
 
+  // 连接建立时的鉴权拦截器
+  io.use((socket, next) => {
+    const { password, userId } = socket.handshake.auth || {};
+
+    if (MULTI_USER_MODE) {
+      if (!password) {
+        return next(new Error('Authentication error: password required'));
+      }
+      const matchedUserId = userPasswordMap.get(password);
+      if (!matchedUserId) {
+        return next(new Error('Authentication error: invalid password'));
+      }
+      if (userId && matchedUserId !== userId) {
+        return next(new Error('Authentication error: userId mismatch'));
+      }
+      // 将认证通过的 userId 绑定至 socket 实例上
+      socket.userId = matchedUserId;
+      return next();
+    }
+
+    if (ACCESS_PASSWORD) {
+      if (password !== ACCESS_PASSWORD) {
+        return next(new Error('Authentication error: invalid password'));
+      }
+    }
+
+    socket.userId = null;
+    return next();
+  });
+
   io.on('connection', (socket) => {
-    console.log('用户连接:', socket.id);
+    console.log('用户连接:', socket.id, '绑定用户ID:', socket.userId);
 
     if (MULTI_USER_MODE) {
       socket.on('join', (userId) => {
-        if (userId) {
+        // 安全防御：只能加入经由认证绑定到该 Socket 实例的自身房间
+        if (userId && userId === socket.userId) {
           socket.join(userId);
-          console.log(`用户 ${socket.id} 加入房间: ${userId}`);
+          console.log(`用户 ${socket.id} 成功加入自身房间: ${userId}`);
 
           const initialPage = getMessagesPage({
             before: Number.NaN,
@@ -71,6 +102,9 @@ function setupSocket(io) {
             ...initialPage,
             messages: initialPage.messages.map((msg) => toPublicMessage(msg, userId))
           });
+        } else {
+          console.warn(`用户 ${socket.id} 企图越权加入房间: ${userId}，已被拦截`);
+          socket.emit('error', '越权访问被拒绝');
         }
       });
     } else {
