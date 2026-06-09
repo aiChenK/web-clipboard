@@ -1229,3 +1229,61 @@ header h1 {
     justify-content: center;
   }
 }
+
+/* ========== 音视频及富文本样式追加 ========== */
+.message-audio {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  border-radius: 8px;
+  outline: none;
+}
+
+.message-video {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  border-radius: 8px;
+  margin-top: 10px;
+  background-color: #000;
+  outline: none;
+}
+
+.message-link {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 500;
+  word-break: break-all;
+  border-bottom: 1px dashed rgba(102, 126, 234, 0.4);
+  transition: all 0.2s;
+}
+
+.message-link:hover {
+  color: #764ba2;
+  border-bottom-style: solid;
+}
+
+.code-block {
+  background: #f1f3f5;
+  border-left: 4px solid #667eea;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  overflow-x: auto;
+  margin: 8px 0;
+  color: #212529;
+  text-align: left;
+  white-space: pre;
+}
+
+.inline-code {
+  background: #f1f3f5;
+  color: #d6336c;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.875rem;
+  font-weight: 500;
+}

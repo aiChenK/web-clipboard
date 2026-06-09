@@ -146,6 +146,59 @@ function setImageProcessing(active) {
     : '';
 }
 
+function escapeHTML(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function renderSmartText(text) {
+  if (!text) return '';
+
+  const placeholders = [];
+  let html = escapeHTML(text);
+
+  // 1. 提取 ``` 多行代码块并占位（支持匹配可选语言声明，如 ```javascript）
+  html = html.replace(/```(\w*)\n([\s\S]*?)\n?```/g, (match, lang, code) => {
+    const placeholder = `___CODE_BLOCK_PLACEHOLDER_${placeholders.length}___`;
+    placeholders.push({
+      placeholder,
+      content: `<pre class="code-block"><code>${code}</code></pre>`
+    });
+    return placeholder;
+  });
+
+  // 2. 提取 ` 行内代码并占位
+  html = html.replace(/`([^`\n]+)`/g, (match, code) => {
+    const placeholder = `___INLINE_CODE_PLACEHOLDER_${placeholders.length}___`;
+    placeholders.push({
+      placeholder,
+      content: `<code class="inline-code">${code}</code>`
+    });
+    return placeholder;
+  });
+
+  // 3. 智能渲染 URL 链接
+  const urlRegex = /(\bhttps?:\/\/[^\s<]+[^.,?\s<])/gi;
+  html = html.replace(urlRegex, (url) => {
+    return `<a href="${url}" target="_blank" rel="noopener" class="message-link">${url}</a>`;
+  });
+
+  // 4. 将剩余文本的换行符 \n 替换为 <br>
+  html = html.replace(/\n/g, '<br>');
+
+  // 5. 将代码块和行内代码占位符还原回去
+  for (const item of placeholders) {
+    html = html.replace(item.placeholder, item.content);
+  }
+
+  return html;
+}
+
 function formatTime(timestamp) {
   const date = new Date(timestamp);
   const now = new Date();
@@ -293,7 +346,7 @@ function createMessageElement(msg, isFavoritesView = false) {
   if (msg.type === 'text') {
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content text';
-    contentEl.textContent = msg.content;
+    contentEl.innerHTML = renderSmartText(msg.content);
     messageEl.appendChild(headerEl);
     messageEl.appendChild(contentEl);
 
@@ -352,6 +405,37 @@ function createMessageElement(msg, isFavoritesView = false) {
 
     contentEl.appendChild(nameEl);
     contentEl.appendChild(metaEl);
+
+    // 凭证链接拼装，供音视频播放和下载使用
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+    const savedPassword = localStorage.getItem('web-clipboard-password');
+    if (savedPassword) {
+      params.set('password', savedPassword);
+    }
+    const mediaUrl = `/api/messages/${msg.id}/file-download?${params.toString()}`;
+
+    // 如果是音频文件，内联音频播放器
+    if (fileData.mimeType && fileData.mimeType.startsWith('audio/')) {
+      const audioEl = document.createElement('audio');
+      audioEl.src = mediaUrl;
+      audioEl.controls = true;
+      audioEl.className = 'message-audio';
+      contentEl.appendChild(audioEl);
+    }
+
+    // 如果是视频文件，内联视频播放器
+    if (fileData.mimeType && fileData.mimeType.startsWith('video/')) {
+      const videoEl = document.createElement('video');
+      videoEl.src = mediaUrl;
+      videoEl.controls = true;
+      videoEl.preload = 'metadata';
+      videoEl.className = 'message-video';
+      contentEl.appendChild(videoEl);
+    }
+
     messageEl.appendChild(headerEl);
     messageEl.appendChild(contentEl);
 
@@ -359,15 +443,7 @@ function createMessageElement(msg, isFavoritesView = false) {
     downloadBtn.className = 'btn btn-secondary';
     downloadBtn.textContent = '下载文件';
     downloadBtn.addEventListener('click', () => {
-      const params = new URLSearchParams();
-      if (currentMode === 'multi' && userId) {
-        params.set('userId', userId);
-      }
-      const savedPassword = localStorage.getItem('web-clipboard-password');
-      if (savedPassword) {
-        params.set('password', savedPassword);
-      }
-      window.open(`/api/messages/${msg.id}/file-download?${params.toString()}`, '_blank', 'noopener');
+      window.open(mediaUrl, '_blank', 'noopener');
     });
     actionsEl.appendChild(downloadBtn);
   }
@@ -958,6 +1034,21 @@ async function pasteText() {
   }
 }
 
+async function pasteAndSendText() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text || !text.trim()) {
+      showToast('剪贴板无文本内容');
+      return;
+    }
+    sendMessage('text', text);
+    showToast('已一键粘贴并发送');
+  } catch (error) {
+    showToast('无法读取剪贴板');
+    console.error(error);
+  }
+}
+
 async function copyTextToClipboard(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1228,7 +1319,43 @@ textInput.addEventListener('keypress', (e) => {
 });
 
 textInput.addEventListener('input', autoResizeTextarea);
+pasteTextBtn.title = '单击粘贴，双击粘贴并直接发送';
 pasteTextBtn.addEventListener('click', pasteText);
+pasteTextBtn.addEventListener('dblclick', pasteAndSendText);
+
+// 全局粘贴监听器，实现免聚焦一键粘贴
+document.addEventListener('paste', (e) => {
+  const activeEl = document.activeElement;
+  const isInputActive = activeEl && (
+    activeEl.tagName === 'INPUT' || 
+    activeEl.tagName === 'TEXTAREA' || 
+    activeEl.contentEditable === 'true'
+  );
+  
+  if (isInputActive) return; // 输入聚焦时由浏览器默认处理
+  if (!isAuthenticated) return;
+
+  const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+  for (const item of items) {
+    if (item.type.indexOf('image') !== -1) {
+      const file = item.getAsFile();
+      if (file) {
+        handleImageFiles([file]);
+      }
+      e.preventDefault();
+      break;
+    } else if (item.type === 'text/plain') {
+      item.getAsString((text) => {
+        textInput.value = text;
+        textInput.focus();
+        autoResizeTextarea();
+        showToast('已自动载入粘贴文本');
+      });
+      e.preventDefault();
+      break;
+    }
+  }
+});
 pasteImageBtn.addEventListener('click', pasteImage);
 clearAllBtn.addEventListener('click', clearAllMessages);
 logoutBtn.addEventListener('click', () => logout(true));
@@ -1755,3 +1882,12 @@ socket.on('connect_error', (err) => {
     logout(false);
   }
 });
+
+// 注册 PWA Service Worker 离线缓存服务
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then((reg) => console.log('ServiceWorker 注册成功，作用域为:', reg.scope))
+      .catch((err) => console.error('ServiceWorker 注册失败:', err));
+  });
+}
