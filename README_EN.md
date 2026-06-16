@@ -7,6 +7,7 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
 ## Features
 
 - Default password-free public access, with optional password protection
+- **Password login supports selecting session validity duration (10 minutes to 30 days), with automatic client-side cleanup and logout upon expiration (v1.6.1+)**
 - **Multi-user mode, with data isolated by password (v1.4.0+)**
 - **PWA (Progressive Web App) support for offline asset caching, installable directly to home screen like a native app (v1.6.0+)**
 - Chatbox-style message display, supporting infinite scroll loading of historical messages

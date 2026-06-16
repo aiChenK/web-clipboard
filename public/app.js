@@ -43,6 +43,10 @@ const uploadProgressFill = document.getElementById('upload-progress-fill');
 const uploadProgressText = document.getElementById('upload-progress-text');
 const uploadProgressPercent = document.getElementById('upload-progress-percent');
 const uploadProgressCancel = document.getElementById('upload-progress-cancel');
+const limitDurationChk = document.getElementById('limit-duration-chk');
+const loginDurationSelect = document.getElementById('login-duration-select');
+
+let expireCheckInterval = null;
 
 let currentXhr = null;
 let uploadQueue = [];
@@ -493,6 +497,17 @@ function scrollToBottom() {
 }
 
 function checkAuth() {
+  // 检查是否已超过设定的登录有效时长
+  const expireTimeStr = localStorage.getItem('web-clipboard-login-expires');
+  if (expireTimeStr) {
+    const expireTime = parseInt(expireTimeStr, 10);
+    if (!isNaN(expireTime) && Date.now() >= expireTime) {
+      localStorage.removeItem('web-clipboard-password');
+      localStorage.removeItem('web-clipboard-user-id');
+      localStorage.removeItem('web-clipboard-login-expires');
+    }
+  }
+
   // 先检查运行模式和是否需要密码
   fetch('/api/auth/status')
     .then((res) => res.json())
@@ -549,6 +564,22 @@ function enterChatMode() {
 
   loadInitialMessages();
   loadFavorites();
+
+  // 启动登录有效时长定时检测
+  if (expireCheckInterval) clearInterval(expireCheckInterval);
+  expireCheckInterval = setInterval(checkLoginExpiration, 1000);
+}
+
+function checkLoginExpiration() {
+  const expireTimeStr = localStorage.getItem('web-clipboard-login-expires');
+  if (!expireTimeStr) return;
+  const expireTime = parseInt(expireTimeStr, 10);
+  if (isNaN(expireTime)) return;
+
+  if (Date.now() >= expireTime) {
+    showToast('登录已过期，自动退出登录');
+    logout(false);
+  }
 }
 
 async function loadVersion() {
@@ -633,6 +664,13 @@ function logout(showMessage = true) {
   socket.disconnect();
   localStorage.removeItem('web-clipboard-password');
   localStorage.removeItem('web-clipboard-user-id');
+  localStorage.removeItem('web-clipboard-login-expires');
+
+  if (expireCheckInterval) {
+    clearInterval(expireCheckInterval);
+    expireCheckInterval = null;
+  }
+
   userId = null;
   isAuthenticated = false;
   messages = [];
@@ -784,6 +822,31 @@ async function verifyPassword(password, cachedUserId = null) {
       // 无密码模式不缓存密码
       if (!data.noPassword) {
         localStorage.setItem('web-clipboard-password', password);
+
+        // 处理登录有效时长
+        if (limitDurationChk && limitDurationChk.checked) {
+          const durationVal = loginDurationSelect.value;
+          let durationMs = 0;
+          if (durationVal === '10m') durationMs = 10 * 60 * 1000;
+          else if (durationVal === '30m') durationMs = 30 * 60 * 1000;
+          else if (durationVal === '1h') durationMs = 1 * 60 * 60 * 1000;
+          else if (durationVal === '6h') durationMs = 6 * 60 * 60 * 1000;
+          else if (durationVal === '12h') durationMs = 12 * 60 * 60 * 1000;
+          else if (durationVal === '24h') durationMs = 24 * 60 * 60 * 1000;
+          else if (durationVal === '3d') durationMs = 3 * 24 * 60 * 60 * 1000;
+          else if (durationVal === '7d') durationMs = 7 * 24 * 60 * 60 * 1000;
+          else if (durationVal === '30d') durationMs = 30 * 24 * 60 * 60 * 1000;
+
+          if (durationMs > 0) {
+            localStorage.setItem('web-clipboard-login-expires', (Date.now() + durationMs).toString());
+          } else {
+            localStorage.removeItem('web-clipboard-login-expires');
+          }
+        } else {
+          localStorage.removeItem('web-clipboard-login-expires');
+        }
+      } else {
+        localStorage.removeItem('web-clipboard-login-expires');
       }
 
       enterChatMode();
@@ -1303,6 +1366,12 @@ passwordInput.addEventListener('keypress', (e) => {
 passwordInput.addEventListener('input', () => {
   authError.classList.add('hidden');
 });
+
+if (limitDurationChk) {
+  limitDurationChk.addEventListener('change', () => {
+    loginDurationSelect.disabled = !limitDurationChk.checked;
+  });
+}
 
 sendTextBtn.addEventListener('click', () => {
   const value = textInput.value;
@@ -1879,6 +1948,7 @@ socket.on('connect_error', (err) => {
   console.error('Socket 连接失败:', err.message);
   if (err && err.message && err.message.includes('Authentication error')) {
     showToast('身份验证失效，请重新登录');
+    requirePassword = true;
     logout(false);
   }
 });
