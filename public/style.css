@@ -249,22 +249,13 @@ header h1 {
   margin-bottom: 10px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   position: relative;
-  animation: slideIn 0.2s ease;
+  transition: opacity 0.2s ease, transform 0.2s ease, margin-bottom 0.2s ease;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.message.deleting {
+  opacity: 0;
+  transform: scale(0.95);
 }
-
-
 
 .message.favorited {
   border: 2px solid #667eea;

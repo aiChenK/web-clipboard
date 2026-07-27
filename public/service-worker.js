@@ -1,4 +1,4 @@
-const CACHE_NAME = 'web-clipboard-v1';
+const CACHE_NAME = 'web-clipboard-v1.6.2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -55,7 +55,7 @@ self.addEventListener('fetch', (e) => {
           if (networkResponse && networkResponse.status === 200) {
             caches.open(CACHE_NAME).then((cache) => cache.put(e.request, networkResponse));
           }
-        }).catch(() => {});
+        }).catch(() => { });
         return cachedResponse;
       }
       return fetch(e.request);

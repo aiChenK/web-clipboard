@@ -492,6 +492,87 @@ function renderMessages({ scrollBottom = false } = {}) {
   }
 }
 
+function removeSingleMessage(id) {
+  // 从数据数组中移除
+  messages = messages.filter((m) => m.id !== id);
+  favorites = favorites.filter((f) => f.id !== id);
+
+  const removeElement = (container, emptyHandler) => {
+    if (!container) return;
+    const msgEl = container.querySelector(`.message[data-id="${CSS.escape(id)}"]`);
+    if (msgEl) {
+      msgEl.classList.add('deleting');
+      setTimeout(() => {
+        msgEl.remove();
+        if (emptyHandler) emptyHandler();
+      }, 200);
+    } else if (emptyHandler) {
+      emptyHandler();
+    }
+  };
+
+  removeElement(messagesList, () => {
+    updateMessageCount();
+    if (messages.length === 0) {
+      renderEmptyState();
+    }
+  });
+
+  if (favoritesList) {
+    removeElement(favoritesList, () => {
+      if (currentTab === 'favorites' && favorites.length === 0) {
+        renderFavorites();
+      }
+    });
+  }
+}
+
+function appendSingleMessage(msg) {
+  if (!messagesList) return;
+  if (messagesList.querySelector('.empty-state, .loading-state') || messages.length <= 1) {
+    renderMessages({ scrollBottom: true });
+    return;
+  }
+
+  const msgEl = createMessageElement(msg);
+  messagesList.appendChild(msgEl);
+  updateMessageCount();
+
+  shouldStickToBottom = true;
+  scrollToBottom();
+}
+
+function updateSingleMessageFavorite(id, favorite) {
+  const updateElement = (container) => {
+    if (!container) return;
+    const msgEl = container.querySelector(`.message[data-id="${CSS.escape(id)}"]`);
+    if (msgEl) {
+      if (favorite) {
+        msgEl.classList.add('favorited');
+      } else {
+        msgEl.classList.remove('favorited');
+      }
+      const favBtn = msgEl.querySelector('.message-favorite-action');
+      if (favBtn) {
+        if (favorite) {
+          favBtn.classList.add('active');
+          favBtn.textContent = '★ 已收藏';
+          favBtn.title = '取消收藏';
+        } else {
+          favBtn.classList.remove('active');
+          favBtn.textContent = '☆ 收藏';
+          favBtn.title = '加入收藏';
+        }
+      }
+    }
+  };
+
+  updateElement(messagesList);
+  if (currentTab === 'favorites') {
+    renderFavorites();
+  }
+}
+
 function scrollToBottom() {
   messagesList.scrollTop = messagesList.scrollHeight;
 }
@@ -992,7 +1073,7 @@ async function processUploadQueue() {
       const exists = messages.some((m) => m.id === response.message.id);
       if (!exists) {
         messages.push(response.message);
-        renderMessages({ scrollBottom: true });
+        appendSingleMessage(response.message);
         showToast('发送成功');
       }
     }
@@ -1023,6 +1104,7 @@ async function sendMessage(type, content) {
 
 async function deleteMessage(id) {
   try {
+    removeSingleMessage(id);
     const params = new URLSearchParams();
     if (currentMode === 'multi' && userId) {
       params.set('userId', userId);
@@ -1505,18 +1587,13 @@ socket.on('message-new', (msg) => {
   if (exists) return;
 
   messages.push(msg);
-  renderMessages({ scrollBottom: true });
+  appendSingleMessage(msg);
   showToast('收到新消息');
 });
 
 socket.on('message-delete', (id) => {
   if (!isAuthenticated) return;
-  messages = messages.filter((m) => m.id !== id);
-  favorites = favorites.filter((f) => f.id !== id);
-  renderMessages();
-  if (currentTab === 'favorites') {
-    renderFavorites();
-  }
+  removeSingleMessage(id);
 });
 
 socket.on('messages-clear', (data) => {
@@ -1553,11 +1630,7 @@ socket.on('message-favorite', (data) => {
     favorites = favorites.filter((f) => f.id !== id);
   }
 
-  // 重新渲染
-  renderMessages();
-  if (currentTab === 'favorites') {
-    renderFavorites();
-  }
+  updateSingleMessageFavorite(id, favorite);
 });
 
 // 拖放文件处理
