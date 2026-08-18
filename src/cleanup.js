@@ -1,15 +1,16 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { MULTI_USER_MODE, EXPIRE_TIME, STORAGE_ROOT, FILE_CLEANUP_INTERVAL_MINUTES } = require('./config');
-const { getUserState, getUploadRoot, schedulePersist } = require('./storage');
+const { getUserState, userStates, loadPersistedState, getUploadRoot, schedulePersist } = require('./storage');
 const { deleteMessageFiles, getMessageFileRefs } = require('./upload');
 const { toPosixPath } = require('./utils');
-const { cleanupExpiredShares } = require('./share');
+const { cleanupExpiredShares, deleteSharesByMessageId } = require('./share');
+const { socketHelper } = require('./socket');
 
 let cleanupRunning = false;
 
 // 清理过期数据
-function cleanupExpiredData(userId = null) {
+async function cleanupExpiredData(userId = null) {
   const state = getUserState(userId);
   const now = Date.now();
   const keptMessages = [];
@@ -30,6 +31,19 @@ function cleanupExpiredData(userId = null) {
   state.messages = keptMessages;
   schedulePersist(userId);
 
+  // 广播通知客户端移除过期消息
+  if (socketHelper && socketHelper.io) {
+    for (const msg of expiredMessages) {
+      socketHelper.broadcastDelete(userId, msg.id);
+    }
+  }
+
+  // 清理关联分享
+  await Promise.allSettled(expiredMessages.map((msg) => deleteSharesByMessageId(msg.id, userId))).catch((error) => {
+    console.error('清理过期分享失败:', error);
+  });
+
+  // 清理过期文件
   Promise.allSettled(expiredMessages.map((msg) => deleteMessageFiles(msg, userId))).catch((error) => {
     console.error('清理过期文件失败:', error);
   });
@@ -51,10 +65,13 @@ async function cleanupAllUsersExpiredData() {
     }
 
     for (const userId of userDirs) {
-      cleanupExpiredData(userId);
+      if (!userStates.has(userId)) {
+        await loadPersistedState(userId);
+      }
+      await cleanupExpiredData(userId);
     }
   } else {
-    cleanupExpiredData(null);
+    await cleanupExpiredData(null);
   }
 }
 
@@ -178,6 +195,10 @@ async function cleanupAllUsersOrphanFiles() {
 
 // 启动清理定时任务
 function startCleanupSchedulers() {
+  // 服务启动时立即执行一次过期数据清理与分享清理
+  cleanupAllUsersExpiredData().catch((error) => console.error('初始过期数据清理失败:', error));
+  cleanupExpiredShares().catch((error) => console.error('初始过期分享清理失败:', error));
+
   setInterval(cleanupAllUsersExpiredData, 5 * 60 * 1000);
   setInterval(cleanupAllUsersOrphanFiles, FILE_CLEANUP_INTERVAL_MINUTES * 60 * 1000);
   setInterval(cleanupExpiredShares, 5 * 60 * 1000);

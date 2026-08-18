@@ -13,8 +13,7 @@ const {
 } = require('./src/config');
 const { ensureDir } = require('./src/utils');
 const { loadPersistedState, migrateLegacyData, SINGLE_USER_DATA_FILE } = require('./src/storage');
-const { cleanupOrphanDiskFiles } = require('./src/cleanup');
-const { startCleanupSchedulers } = require('./src/cleanup');
+const { cleanupOrphanDiskFiles, cleanupExpiredData, startCleanupSchedulers } = require('./src/cleanup');
 const { createApp } = require('./src/app');
 const { deleteAllShares, SHARE_DIR } = require('./src/share');
 
@@ -69,15 +68,17 @@ async function start() {
       }
     }
 
-    // 加载所有用户的数据
+    // 加载所有用户的数据并清理过期消息与孤儿文件
     for (const [password, userId] of userPasswordMap) {
       await loadPersistedState(userId);
+      await cleanupExpiredData(userId);
       await cleanupOrphanDiskFiles(userId);
     }
   } else {
     // 单用户模式
     await ensureDir(UPLOAD_ROOT);
     await loadPersistedState(null);
+    await cleanupExpiredData(null);
     await cleanupOrphanDiskFiles(null);
   }
 

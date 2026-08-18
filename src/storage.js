@@ -7,8 +7,10 @@ const { ensureDir, clampPageSize } = require('./utils');
 const userStates = new Map();
 
 // 全局状态（单用户模式使用）
-let messages = [];
-let lastActivity = Date.now();
+const singleUserState = {
+  messages: [],
+  lastActivity: Date.now()
+};
 let persistScheduled = false;
 let persistRunning = false;
 
@@ -47,7 +49,7 @@ function getUploadRoot(userId) {
 // 获取用户状态
 function getUserState(userId) {
   if (!MULTI_USER_MODE) {
-    return { messages, lastActivity };
+    return singleUserState;
   }
 
   if (!userStates.has(userId)) {
@@ -103,8 +105,8 @@ async function loadPersistedState(userId = null) {
     const normalized = normalizePersistedState(parsed);
 
     if (!MULTI_USER_MODE) {
-      messages = normalized.messages;
-      lastActivity = normalized.lastActivity;
+      singleUserState.messages = normalized.messages;
+      singleUserState.lastActivity = normalized.lastActivity;
     } else {
       const state = getUserState(userId);
       state.messages = normalized.messages;
@@ -119,8 +121,8 @@ async function loadPersistedState(userId = null) {
     }
     console.error('读取持久化数据失败，使用空数据启动:', error);
     if (!MULTI_USER_MODE) {
-      messages = [];
-      lastActivity = Date.now();
+      singleUserState.messages = [];
+      singleUserState.lastActivity = Date.now();
     }
   }
 }
