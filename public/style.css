@@ -784,6 +784,33 @@ header h1 {
   min-width: 80px;
 }
 
+.image-compress-modal-content {
+  max-width: 380px;
+}
+
+.image-compress-modal-content .modal-title {
+  margin: 0 0 12px 0;
+  font-size: 1.15rem;
+  color: #333;
+}
+
+.image-compress-message {
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #555;
+  margin-bottom: 20px;
+}
+
+.image-compress-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.image-compress-actions .btn {
+  width: 100%;
+}
+
 @media (max-width: 600px) {
   body {
     padding: 0;

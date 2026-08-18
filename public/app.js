@@ -11,8 +11,9 @@ const socket = io({
 const PAGE_SIZE = 30;
 const TOP_LOAD_THRESHOLD = 60;
 const ORIGINAL_FETCH_TIMEOUT = 5000;
-const THUMBNAIL_MAX_EDGE = 480;
-const THUMBNAIL_NO_COMPRESS_MAX_BYTES = 500 * 1024;
+const THUMBNAIL_MAX_EDGE = 1200;
+const LARGE_IMAGE_THRESHOLD_BYTES = 3 * 1024 * 1024;
+const HD_COMPRESS_MAX_EDGE = 3840;
 
 const authSection = document.getElementById('auth-section');
 const chatSection = document.getElementById('chat-section');
@@ -38,6 +39,12 @@ const imageProcessingState = document.getElementById('image-processing-state');
 const tabs = document.querySelectorAll('.tab');
 const dropZone = document.getElementById('drop-zone');
 const dropOverlay = document.getElementById('drop-overlay');
+
+const imageCompressModal = document.getElementById('image-compress-modal');
+const imageCompressMsg = document.getElementById('image-compress-message');
+const imageCompressBtn = document.getElementById('image-compress-btn');
+const imageOriginalBtn = document.getElementById('image-original-btn');
+const imageCancelBtn = document.getElementById('image-cancel-btn');
 const uploadProgressContainer = document.getElementById('upload-progress-container');
 const uploadProgressFill = document.getElementById('upload-progress-fill');
 const uploadProgressText = document.getElementById('upload-progress-text');
@@ -974,10 +981,14 @@ function sendMessageWithProgress(type, content) {
       return;
     }
 
-    if ((type === 'image' || type === 'file') && !(content instanceof File || content instanceof Blob)) {
-      showToast('文件内容为空');
-      reject(new Error('文件内容为空'));
-      return;
+    if (type === 'image' || type === 'file') {
+      const isFileOrBlob = content instanceof File || content instanceof Blob;
+      const isImagePayload = content && typeof content === 'object' && (content.file instanceof File || content.file instanceof Blob);
+      if (!isFileOrBlob && !isImagePayload) {
+        showToast('文件内容为空');
+        reject(new Error('文件内容为空'));
+        return;
+      }
     }
 
     const xhr = new XMLHttpRequest();
@@ -1045,7 +1056,18 @@ function sendMessageWithProgress(type, content) {
       // 图片和文件使用 FormData
       const formData = new FormData();
       formData.append('type', type);
-      formData.append('file', content);
+
+      if (content && typeof content === 'object' && ('file' in content || 'thumbnail' in content)) {
+        if (content.file) {
+          formData.append('file', content.file);
+        }
+        if (content.thumbnail) {
+          formData.append('thumbnail', content.thumbnail);
+        }
+      } else {
+        formData.append('file', content);
+      }
+
       // 多用户模式下添加 userId
       if (currentMode === 'multi' && userId) {
         formData.append('userId', userId);
@@ -1337,72 +1359,150 @@ function loadImageElementFromBlob(blob) {
   });
 }
 
-function getThumbnailCompressionConfig(sizeBytes) {
-  if (sizeBytes <= THUMBNAIL_NO_COMPRESS_MAX_BYTES) {
-    return null;
-  }
-
-  if (sizeBytes <= 1.5 * 1024 * 1024) {
-    return { maxEdge: 1920, quality: 0.96 };
-  }
-  if (sizeBytes <= 3 * 1024 * 1024) {
-    return { maxEdge: 1600, quality: 0.92 };
-  }
-  if (sizeBytes <= 6 * 1024 * 1024) {
-    return { maxEdge: 1360, quality: 0.88 };
-  }
-  if (sizeBytes <= 12 * 1024 * 1024) {
-    return { maxEdge: 1120, quality: 0.82 };
-  }
-  return { maxEdge: 960, quality: 0.78 };
-}
-
-async function createThumbnailDataUrl(blob) {
-  const config = getThumbnailCompressionConfig(blob.size);
-  if (!config) {
-    return blobToDataUrl(blob);
-  }
-
-  const img = await loadImageElementFromBlob(blob);
-  const maxEdge = Math.max(config.maxEdge, THUMBNAIL_MAX_EDGE);
-  const scale = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
-  const width = Math.max(1, Math.round(img.naturalWidth * scale));
-  const height = Math.max(1, Math.round(img.naturalHeight * scale));
-
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, width, height);
-
-  const mimeType = blob.type === 'image/png' ? 'image/png' : 'image/jpeg';
-  return canvas.toDataURL(mimeType, config.quality);
-}
-
-async function buildImagePayload(blob) {
-  const originalPromise = blobToDataUrl(blob);
-  const thumbnailPromise = createThumbnailDataUrl(blob);
-  const [thumbnail, original] = await Promise.all([thumbnailPromise, originalPromise]);
-  return { thumbnail, original };
-}
-
-async function processAndSendImageBlob(blob) {
-  setImageProcessing(true);
+async function compressImageToBlob(fileOrBlob, maxEdge = 3840, quality = 0.95) {
   try {
-    const content = await buildImagePayload(blob);
-    await sendMessage('image', content);
-  } catch (error) {
-    showToast('图片处理或发送失败');
-    console.error(error);
-  } finally {
-    setImageProcessing(false);
+    const img = await loadImageElementFromBlob(fileOrBlob);
+    const naturalWidth = img.naturalWidth || img.width;
+    const naturalHeight = img.naturalHeight || img.height;
+
+    // 若原图尺寸在限制内，保持 100% 点对点原始尺寸不缩放
+    const scale = Math.min(1, maxEdge / Math.max(naturalWidth, naturalHeight));
+    const width = Math.max(1, Math.round(naturalWidth * scale));
+    const height = Math.max(1, Math.round(naturalHeight * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, width, height);
+
+    return await new Promise((resolve) => {
+      // 优先输出高质量 webp，不支持时降级为 jpeg
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob);
+        } else {
+          canvas.toBlob((fallbackBlob) => {
+            resolve(fallbackBlob || fileOrBlob);
+          }, 'image/jpeg', quality);
+        }
+      }, 'image/webp', quality);
+    });
+  } catch (err) {
+    console.error('压缩图片失败，回退使用原始文件:', err);
+    return fileOrBlob;
   }
+}
+
+async function createThumbnailBlob(fileOrBlob) {
+  return compressImageToBlob(fileOrBlob, 1920, 0.92);
+}
+
+function confirmLargeImageUpload(file) {
+  return new Promise((resolve) => {
+    if (!imageCompressModal || !imageCompressMsg || !imageCompressBtn || !imageOriginalBtn || !imageCancelBtn) {
+      resolve('compress');
+      return;
+    }
+
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    imageCompressMsg.textContent = `检测到当前图片较大（${sizeMB} MB），建议压缩后上传以大幅提升传输速度并节省带宽。`;
+    imageCompressModal.classList.remove('hidden');
+
+    const cleanup = () => {
+      imageCompressModal.classList.add('hidden');
+      imageCompressBtn.removeEventListener('click', onCompress);
+      imageOriginalBtn.removeEventListener('click', onOriginal);
+      imageCancelBtn.removeEventListener('click', onCancel);
+      imageCompressModal.removeEventListener('click', onBackdropClick);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+
+    const onCompress = () => {
+      cleanup();
+      resolve('compress');
+    };
+
+    const onOriginal = () => {
+      cleanup();
+      resolve('original');
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve('cancel');
+    };
+
+    const onBackdropClick = (e) => {
+      if (e.target === imageCompressModal) {
+        onCancel();
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    imageCompressBtn.addEventListener('click', onCompress);
+    imageOriginalBtn.addEventListener('click', onOriginal);
+    imageCancelBtn.addEventListener('click', onCancel);
+    imageCompressModal.addEventListener('click', onBackdropClick);
+    document.addEventListener('keydown', onKeyDown);
+  });
+}
+
+async function handleSingleImageFile(file) {
+  if (!file || !file.type || !file.type.startsWith('image/')) return;
+
+  // 1. 如果图片 <= 3MB：100% 原始无损直传，完全不进行有损转码，确保极致清晰度
+  if (file.size <= LARGE_IMAGE_THRESHOLD_BYTES) {
+    queueUpload('image', {
+      file: file,
+      thumbnail: null
+    });
+    return;
+  }
+
+  // 2. 如果图片 > 3MB：弹出确认框询问用户
+  const choice = await confirmLargeImageUpload(file);
+  if (choice === 'cancel') {
+    return;
+  }
+
+  let mainBlob = file;
+  if (choice === 'compress') {
+    showToast('正在高清压缩图片...');
+    // 保持高分辨率（最高 4K），画质 0.95 高清压缩至 3MB 以内
+    mainBlob = await compressImageToBlob(file, HD_COMPRESS_MAX_EDGE, 0.95);
+  }
+
+  // 3. 为大图生成超清 1920px 缩略图（质量 0.92）
+  const thumbnailBlob = await createThumbnailBlob(mainBlob);
+
+  // 4. 构造上传文件对象
+  const origName = file.name || `image-${Date.now()}.png`;
+  const ext = mainBlob.type === 'image/webp' ? '.webp' : (mainBlob.type === 'image/jpeg' ? '.jpg' : '.png');
+  const mainFile = new File([mainBlob], origName.replace(/\.[^.]+$/, ext), {
+    type: mainBlob.type || 'image/png'
+  });
+  const thumbFile = new File([thumbnailBlob], `thumb-${Date.now()}.webp`, {
+    type: thumbnailBlob.type || 'image/webp'
+  });
+
+  queueUpload('image', {
+    file: mainFile,
+    thumbnail: thumbFile
+  });
 }
 
 async function handleImageFiles(files) {
   for (const file of files) {
-    if (!file || !file.type.startsWith('image/')) continue;
-    queueUpload('image', file);
+    if (!file || !file.type || !file.type.startsWith('image/')) continue;
+    await handleSingleImageFile(file);
   }
 }
 
@@ -1424,7 +1524,7 @@ async function pasteImage() {
         const blob = await item.getType(type);
         // 将 Blob 转为 File 对象，添加默认文件名
         const file = new File([blob], `clipboard-${Date.now()}.png`, { type: blob.type || 'image/png' });
-        queueUpload('image', file);
+        await handleSingleImageFile(file);
         return;
       }
     }
@@ -1950,10 +2050,11 @@ function openImageViewer(msg) {
   // 显示缩略图
   imageViewerImg.src = imageData.thumbnail;
 
-  // 如果有原图，显示原图按钮
+  // 如果有原图，显示原图按钮（需用户手动点击后加载）
   if (imageData.hasOriginal) {
     imageViewerOriginalBtn.classList.remove('hidden');
     imageViewerOriginalBtn.textContent = '查看原图';
+    imageViewerOriginalBtn.disabled = false;
   } else {
     imageViewerOriginalBtn.classList.add('hidden');
   }

@@ -74,8 +74,25 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // multipart/form-data 上传
-router.post('/upload', requireAuth, uploadMiddleware.single('file'), async (req, res) => {
-  if (!req.file) {
+const uploadFields = uploadMiddleware.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'thumbnail', maxCount: 1 }
+]);
+
+router.post('/upload', requireAuth, (req, res, next) => {
+  uploadFields(req, res, (err) => {
+    if (err) {
+      console.error('上传中间件错误:', err);
+      return res.status(400).json({ error: err.message || '文件上传失败' });
+    }
+    next();
+  });
+}, async (req, res) => {
+  const mainFile = req.files && req.files.file ? req.files.file[0] : req.file;
+  const thumbFile = req.files && req.files.thumbnail ? req.files.thumbnail[0] : null;
+
+  if (!mainFile) {
+    if (thumbFile) await fs.unlink(thumbFile.path).catch(() => {});
     return res.status(400).json({ error: '缺少文件' });
   }
 
@@ -85,33 +102,62 @@ router.post('/upload', requireAuth, uploadMiddleware.single('file'), async (req,
 
   const type = req.body.type || 'file';
   if (type !== 'image' && type !== 'file') {
-    await fs.unlink(req.file.path).catch(() => {});
+    await fs.unlink(mainFile.path).catch(() => {});
+    if (thumbFile) await fs.unlink(thumbFile.path).catch(() => {});
     return res.status(400).json({ error: '不支持的消息类型' });
   }
 
   const id = createMessageId();
   const category = type === 'image' ? 'images' : 'files';
   const dateDir = toDateFolder();
-  const decodedName = decodeFilename(req.file.originalname || 'file');
+  const decodedName = decodeFilename(mainFile.originalname || 'file');
   const safeName = sanitizeFilename(decodedName);
   const parsed = path.parse(safeName);
-  const ext = parsed.ext || extensionFromMime(req.file.mimetype) || '';
+  const ext = parsed.ext || extensionFromMime(mainFile.mimetype) || '';
   const suffix = type === 'image' ? '-orig' : '';
   const filename = category === 'files'
     ? `${id}-${parsed.name}${ext}`
     : `${id}${suffix}${ext}`;
 
-  const oldPath = req.file.path;
-  const newRelativePath = path.join(category, dateDir, filename);
-  const newAbsolutePath = path.join(uploadRoot, newRelativePath);
+  const mainOldPath = mainFile.path;
+  const mainRelativePath = path.join(category, dateDir, filename);
+  const mainAbsolutePath = path.join(uploadRoot, mainRelativePath);
 
-  await ensureDir(path.dirname(newAbsolutePath));
+  await ensureDir(path.dirname(mainAbsolutePath));
 
   try {
-    await fs.rename(oldPath, newAbsolutePath);
+    await fs.rename(mainOldPath, mainAbsolutePath);
   } catch (error) {
-    await fs.copyFile(oldPath, newAbsolutePath);
-    await fs.unlink(oldPath);
+    await fs.copyFile(mainOldPath, mainAbsolutePath);
+    await fs.unlink(mainOldPath).catch(() => {});
+  }
+
+  let thumbRelativePath = mainRelativePath;
+  let thumbMimeType = mainFile.mimetype;
+
+  if (type === 'image' && thumbFile) {
+    const thumbExt = path.extname(thumbFile.originalname) || extensionFromMime(thumbFile.mimetype) || '.webp';
+    const thumbFilename = `${id}-thumb${thumbExt}`;
+    const thumbOldPath = thumbFile.path;
+    const thumbNewRelPath = path.join(category, dateDir, thumbFilename);
+    const thumbNewAbsPath = path.join(uploadRoot, thumbNewRelPath);
+
+    try {
+      await fs.rename(thumbOldPath, thumbNewAbsPath);
+      thumbRelativePath = thumbNewRelPath;
+      thumbMimeType = thumbFile.mimetype;
+    } catch (error) {
+      try {
+        await fs.copyFile(thumbOldPath, thumbNewAbsPath);
+        await fs.unlink(thumbOldPath).catch(() => {});
+        thumbRelativePath = thumbNewRelPath;
+        thumbMimeType = thumbFile.mimetype;
+      } catch (copyErr) {
+        console.error('保存缩略图失败，回退使用原图:', copyErr);
+      }
+    }
+  } else if (thumbFile) {
+    await fs.unlink(thumbFile.path).catch(() => {});
   }
 
   const message = {
@@ -123,18 +169,18 @@ router.post('/upload', requireAuth, uploadMiddleware.single('file'), async (req,
 
   if (type === 'image') {
     message.content = {
-      originalPath: newRelativePath,
-      hasOriginal: true,
-      originalMimeType: req.file.mimetype
+      originalPath: mainRelativePath,
+      thumbnailPath: thumbRelativePath,
+      hasOriginal: Boolean(thumbRelativePath && thumbRelativePath !== mainRelativePath),
+      originalMimeType: mainFile.mimetype,
+      thumbnailMimeType: thumbMimeType
     };
-    message.content.thumbnailPath = newRelativePath;
-    message.content.thumbnailMimeType = req.file.mimetype;
   } else {
     message.content = {
       name: safeName,
-      size: req.file.size,
-      mimeType: req.file.mimetype,
-      filePath: newRelativePath
+      size: mainFile.size,
+      mimeType: mainFile.mimetype,
+      filePath: mainRelativePath
     };
   }
 
