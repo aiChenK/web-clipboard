@@ -1499,9 +1499,17 @@ async function handleSingleImageFile(file) {
   });
 }
 
+function isImageFile(file) {
+  if (!file) return false;
+  if (file.type && file.type.startsWith('image/')) return true;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'heic', 'heif', 'svg', 'avif'].includes(ext);
+}
+
 async function handleImageFiles(files) {
   for (const file of files) {
-    if (!file || !file.type || !file.type.startsWith('image/')) continue;
+    if (!isImageFile(file)) continue;
     await handleSingleImageFile(file);
   }
 }
@@ -1509,7 +1517,11 @@ async function handleImageFiles(files) {
 async function handleFileUpload(files) {
   for (const file of files) {
     if (!file) continue;
-    queueUpload('file', file);
+    if (isImageFile(file)) {
+      await handleSingleImageFile(file);
+    } else {
+      queueUpload('file', file);
+    }
   }
 }
 
@@ -2131,7 +2143,11 @@ socket.on('connect_error', (err) => {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js')
-      .then((reg) => console.log('ServiceWorker 注册成功，作用域为:', reg.scope))
+      .then((reg) => {
+        console.log('ServiceWorker 注册成功，作用域为:', reg.scope);
+        // 主动检测更新
+        reg.update().catch(() => {});
+      })
       .catch((err) => console.error('ServiceWorker 注册失败:', err));
   });
 }

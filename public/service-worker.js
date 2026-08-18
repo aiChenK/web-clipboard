@@ -1,4 +1,4 @@
-const CACHE_NAME = 'web-clipboard-v1.6.2';
+const CACHE_NAME = 'web-clipboard-v1.6.4';
 const ASSETS = [
   '/',
   '/index.html',
@@ -12,10 +12,11 @@ const ASSETS = [
 
 // 安装 Service Worker 并预缓存核心静态资产
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -26,6 +27,7 @@ self.addEventListener('activate', (e) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
+            console.log('清理旧缓存:', key);
             return caches.delete(key);
           }
         })
