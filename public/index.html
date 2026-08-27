@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.6.4">
+  <link rel="stylesheet" href="style.css?v=1.6.5">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1a1a1a">
   <link rel="apple-touch-icon" href="/favicon.svg">
@@ -196,8 +196,28 @@
     </div>
   </div>
 
+  <div id="text-viewer" class="text-viewer modal hidden">
+    <div class="text-viewer-backdrop"></div>
+    <div class="text-viewer-container">
+      <div class="text-viewer-header">
+        <div class="text-viewer-title-info">
+          <h3 class="text-viewer-title">文本详情</h3>
+          <span id="text-viewer-meta" class="text-viewer-meta"></span>
+        </div>
+        <button id="text-viewer-close" class="text-viewer-close" title="关闭">×</button>
+      </div>
+      <div class="text-viewer-body">
+        <div id="text-viewer-content" class="text-viewer-content"></div>
+      </div>
+      <div class="text-viewer-actions">
+        <button id="text-viewer-copy-btn" class="btn btn-primary">复制全文</button>
+        <button id="text-viewer-close-btn" class="btn btn-secondary">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js?v=1.6.4"></script>
+  <script src="app.js?v=1.6.5"></script>
 </body>
 
 </html>

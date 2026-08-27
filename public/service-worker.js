@@ -1,4 +1,4 @@
-const CACHE_NAME = 'web-clipboard-v1.6.4';
+const CACHE_NAME = 'web-clipboard-v1.6.5';
 const ASSETS = [
   '/',
   '/index.html',

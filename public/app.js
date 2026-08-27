@@ -358,8 +358,50 @@ function createMessageElement(msg, isFavoritesView = false) {
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content text';
     contentEl.innerHTML = renderSmartText(msg.content);
+
+    const lines = (msg.content || '').split('\n').length;
+    const isLongByContent = lines > 6 || (msg.content && msg.content.length > 220);
+
+    if (isLongByContent) {
+      contentEl.classList.add('is-collapsed');
+      contentEl.title = '点击查看完整内容';
+      contentEl.addEventListener('click', (e) => {
+        if (e.target.tagName.toLowerCase() === 'a') return;
+        openTextViewer(msg);
+      });
+    }
+
     messageEl.appendChild(headerEl);
     messageEl.appendChild(contentEl);
+
+    // 在 DOM 渲染后检测是否超出最大显示高度
+    requestAnimationFrame(() => {
+      if (contentEl.scrollHeight > 185 && !contentEl.classList.contains('is-collapsed')) {
+        contentEl.classList.add('is-collapsed');
+        contentEl.title = '点击查看完整内容';
+        contentEl.addEventListener('click', (e) => {
+          if (e.target.tagName.toLowerCase() === 'a') return;
+          openTextViewer(msg);
+        });
+        if (!actionsEl.querySelector('.message-view-action')) {
+          const dynamicViewBtn = document.createElement('button');
+          dynamicViewBtn.className = 'btn btn-secondary message-view-action';
+          dynamicViewBtn.textContent = '查看';
+          dynamicViewBtn.title = '查看完整内容';
+          dynamicViewBtn.addEventListener('click', () => openTextViewer(msg));
+          actionsEl.insertBefore(dynamicViewBtn, actionsEl.firstChild);
+        }
+      }
+    });
+
+    if (isLongByContent) {
+      const viewBtn = document.createElement('button');
+      viewBtn.className = 'btn btn-secondary message-view-action';
+      viewBtn.textContent = '查看';
+      viewBtn.title = '查看完整内容';
+      viewBtn.addEventListener('click', () => openTextViewer(msg));
+      actionsEl.appendChild(viewBtn);
+    }
 
     const copyBtn = document.createElement('button');
     copyBtn.className = 'btn btn-secondary';
@@ -2124,10 +2166,64 @@ imageViewerOriginalBtn.addEventListener('click', viewOriginalImage);
 imageViewerCopyBtn.addEventListener('click', copyViewerImage);
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !imageViewer.classList.contains('hidden')) {
-    closeImageViewer();
+  if (e.key === 'Escape') {
+    if (imageViewer && !imageViewer.classList.contains('hidden')) {
+      closeImageViewer();
+    }
+    if (textViewer && !textViewer.classList.contains('hidden')) {
+      closeTextViewer();
+    }
   }
 });
+
+// ========== 文本查看器 ==========
+const textViewer = document.getElementById('text-viewer');
+const textViewerContent = document.getElementById('text-viewer-content');
+const textViewerMeta = document.getElementById('text-viewer-meta');
+const textViewerClose = document.getElementById('text-viewer-close');
+const textViewerCloseBtn = document.getElementById('text-viewer-close-btn');
+const textViewerCopyBtn = document.getElementById('text-viewer-copy-btn');
+const textViewerBackdrop = textViewer ? textViewer.querySelector('.text-viewer-backdrop') : null;
+
+let currentViewerTextMsg = null;
+
+function openTextViewer(msg) {
+  if (!textViewer || !textViewerContent) return;
+  currentViewerTextMsg = msg;
+
+  const content = msg.content || '';
+  const lines = content.split('\n').length;
+  const chars = content.length;
+
+  if (textViewerMeta) {
+    textViewerMeta.textContent = `${lines} 行 · ${chars} 字 · ${formatTime(msg.timestamp)}`;
+  }
+
+  textViewerContent.innerHTML = renderSmartText(content);
+  textViewer.classList.remove('hidden');
+}
+
+function closeTextViewer() {
+  if (!textViewer) return;
+  textViewer.classList.add('hidden');
+  if (textViewerContent) {
+    textViewerContent.innerHTML = '';
+  }
+  currentViewerTextMsg = null;
+}
+
+async function copyViewerText() {
+  if (!currentViewerTextMsg || !currentViewerTextMsg.content) {
+    showToast('没有可复制的内容');
+    return;
+  }
+  await copyTextToClipboard(currentViewerTextMsg.content);
+}
+
+if (textViewerBackdrop) textViewerBackdrop.addEventListener('click', closeTextViewer);
+if (textViewerClose) textViewerClose.addEventListener('click', closeTextViewer);
+if (textViewerCloseBtn) textViewerCloseBtn.addEventListener('click', closeTextViewer);
+if (textViewerCopyBtn) textViewerCopyBtn.addEventListener('click', copyViewerText);
 
 // 处理 Socket.IO 连接认证失败
 socket.on('connect_error', (err) => {
