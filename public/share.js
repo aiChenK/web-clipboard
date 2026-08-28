@@ -378,6 +378,76 @@ function closeImageViewer() {
   isViewingOriginal = false;
 }
 
+function dataURLtoBlobSync(dataUrl) {
+  try {
+    const parts = dataUrl.split(',');
+    if (parts.length !== 2) return null;
+    const match = parts[0].match(/:(.*?);/);
+    const mime = match ? match[1] : 'image/png';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch (e) {
+    console.error('dataURLtoBlobSync 失败:', e);
+    return null;
+  }
+}
+
+function convertImageSourceToPngBlob(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas context not available'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Canvas toBlob failed'));
+          }
+        }, 'image/png');
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = src;
+  });
+}
+
+async function writePngToClipboard(blobOrPromise) {
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) {
+    throw new Error('浏览器不支持剪贴板图片写入');
+  }
+
+  try {
+    const item = new ClipboardItem({ 'image/png': blobOrPromise });
+    await navigator.clipboard.write([item]);
+    return true;
+  } catch (firstErr) {
+    if (blobOrPromise instanceof Promise) {
+      const resolvedBlob = await blobOrPromise;
+      const item = new ClipboardItem({ 'image/png': resolvedBlob });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+    throw firstErr;
+  }
+}
+
 async function copyViewerImage() {
   const src = imageViewerImg.src;
   if (!src) {
@@ -386,38 +456,28 @@ async function copyViewerImage() {
   }
 
   try {
-    const response = await fetch(src);
-    const blob = await response.blob();
-
-    // 如果不是 PNG，转换为 PNG
-    if (blob.type !== 'image/png') {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = src;
-      });
-
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      ctx.drawImage(img, 0, 0);
-
-      const pngDataUrl = canvas.toDataURL('image/png');
-      const pngResponse = await fetch(pngDataUrl);
-      blob = await pngResponse.blob();
+    if (typeof src === 'string' && src.startsWith('data:image/png;base64,')) {
+      const syncBlob = dataURLtoBlobSync(src);
+      if (syncBlob) {
+        await writePngToClipboard(syncBlob);
+        showToast('图片已复制到剪贴板');
+        return;
+      }
     }
 
-    if (typeof ClipboardItem !== 'undefined') {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      showToast('图片已复制到剪贴板');
-    } else {
+    const blobPromise = (async () => {
+      return await convertImageSourceToPngBlob(src);
+    })();
+
+    await writePngToClipboard(blobPromise);
+    showToast('图片已复制到剪贴板');
+  } catch (error) {
+    console.error('复制图片失败:', error);
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) {
       showToast('浏览器不支持复制图片');
+    } else {
+      showToast('复制图片失败');
     }
-  } catch {
-    showToast('复制图片失败');
   }
 }
 

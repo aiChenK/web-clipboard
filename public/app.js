@@ -1268,6 +1268,76 @@ async function copyTextToClipboard(text) {
   }
 }
 
+function dataURLtoBlobSync(dataUrl) {
+  try {
+    const parts = dataUrl.split(',');
+    if (parts.length !== 2) return null;
+    const match = parts[0].match(/:(.*?);/);
+    const mime = match ? match[1] : 'image/png';
+    const bstr = atob(parts[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new Blob([u8arr], { type: mime });
+  } catch (e) {
+    console.error('dataURLtoBlobSync 失败:', e);
+    return null;
+  }
+}
+
+function convertImageSourceToPngBlob(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          reject(new Error('Canvas context not available'));
+          return;
+        }
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) {
+            resolve(blob);
+          } else {
+            reject(new Error('Canvas toBlob failed'));
+          }
+        }, 'image/png');
+      } catch (err) {
+        reject(err);
+      }
+    };
+    img.onerror = () => reject(new Error('图片加载失败'));
+    img.src = src;
+  });
+}
+
+async function writePngToClipboard(blobOrPromise) {
+  if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) {
+    throw new Error('浏览器不支持剪贴板图片写入');
+  }
+
+  try {
+    const item = new ClipboardItem({ 'image/png': blobOrPromise });
+    await navigator.clipboard.write([item]);
+    return true;
+  } catch (firstErr) {
+    if (blobOrPromise instanceof Promise) {
+      const resolvedBlob = await blobOrPromise;
+      const item = new ClipboardItem({ 'image/png': resolvedBlob });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+    throw firstErr;
+  }
+}
+
 async function copyImageToClipboard(dataUrl, options = {}) {
   const {
     successToast = '图片已复制到剪贴板',
@@ -1281,42 +1351,31 @@ async function copyImageToClipboard(dataUrl, options = {}) {
   }
 
   try {
-    const response = await fetch(dataUrl);
-    let blob = await response.blob();
-
-    if (blob.type !== 'image/png') {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = dataUrl;
-      });
-
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      ctx.drawImage(img, 0, 0);
-
-      const pngDataUrl = canvas.toDataURL('image/png');
-      const pngResponse = await fetch(pngDataUrl);
-      blob = await pngResponse.blob();
+    if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png;base64,')) {
+      const syncBlob = dataURLtoBlobSync(dataUrl);
+      if (syncBlob) {
+        await writePngToClipboard(syncBlob);
+        if (successToast) showToast(successToast);
+        return true;
+      }
     }
 
-    if (typeof ClipboardItem !== 'undefined') {
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'image/png': blob })
-      ]);
-      if (successToast) showToast(successToast);
-      return true;
-    } else {
-      if (!silentFailure) showToast('浏览器不支持复制图片，请右键另存');
-      return false;
-    }
+    const blobPromise = (async () => {
+      return await convertImageSourceToPngBlob(dataUrl);
+    })();
+
+    await writePngToClipboard(blobPromise);
+    if (successToast) showToast(successToast);
+    return true;
   } catch (error) {
     console.error('复制图片失败:', error);
-    if (!silentFailure) showToast(failureToast);
+    if (!silentFailure) {
+      if (typeof ClipboardItem === 'undefined' || !navigator.clipboard || !navigator.clipboard.write) {
+        showToast('浏览器不支持复制图片，请右键另存');
+      } else {
+        showToast(failureToast);
+      }
+    }
     return false;
   }
 }
@@ -1354,25 +1413,39 @@ async function copyOriginalImageWithFallback(msg) {
     return;
   }
 
+  let usedFallback = false;
+  let fallbackReason = '';
+
+  const originalBlobPromise = (async () => {
+    try {
+      const original = await fetchOriginalImageWithTimeout(msg.id, ORIGINAL_FETCH_TIMEOUT);
+      if (typeof original === 'string' && original.startsWith('data:image/png;base64,')) {
+        const syncBlob = dataURLtoBlobSync(original);
+        if (syncBlob) return syncBlob;
+      }
+      return await convertImageSourceToPngBlob(original);
+    } catch (err) {
+      console.warn('获取原图失败，回退复制缩略图:', err);
+      usedFallback = true;
+      fallbackReason = err && err.name === 'AbortError' ? '超时' : '失败';
+      if (typeof thumbnail === 'string' && thumbnail.startsWith('data:image/png;base64,')) {
+        const syncBlob = dataURLtoBlobSync(thumbnail);
+        if (syncBlob) return syncBlob;
+      }
+      return await convertImageSourceToPngBlob(thumbnail);
+    }
+  })();
+
   try {
-    const original = await fetchOriginalImageWithTimeout(msg.id, ORIGINAL_FETCH_TIMEOUT);
-    const copiedOriginal = await copyImageToClipboard(original, {
-      successToast: '原图已复制到剪贴板',
-      silentFailure: true
-    });
-    if (copiedOriginal) {
-      return;
+    await writePngToClipboard(originalBlobPromise);
+    if (usedFallback) {
+      showToast(fallbackReason === '超时' ? '复制原图超时，已回退复制缩略图' : '获取原图失败，已回退复制缩略图');
+    } else {
+      showToast('原图已复制到剪贴板');
     }
-    const copiedFallback = await copyImageToClipboard(thumbnail, { silentFailure: true });
-    showToast(copiedFallback ? '复制原图失败，已回退复制缩略图' : '复制原图失败，且回退缩略图复制失败');
   } catch (error) {
-    console.error('获取原图失败:', error);
-    const copiedFallback = await copyImageToClipboard(thumbnail, { silentFailure: true });
-    if (error && error.name === 'AbortError') {
-      showToast(copiedFallback ? '复制原图超时，已回退复制缩略图' : '复制原图超时，且回退缩略图复制失败');
-      return;
-    }
-    showToast(copiedFallback ? '获取原图失败，已回退复制缩略图' : '获取原图失败，且回退缩略图复制失败');
+    console.error('复制原图失败:', error);
+    showToast('复制原图失败，请尝试右键另存');
   }
 }
 

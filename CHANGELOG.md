@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.6.6（2026-08-28）
+
+- **修复与优化图片剪贴板复制功能（全面适配 Safari/WebKit 浏览器）**：
+  - **解决 Safari 用户手势（User Activation）过期导致的复制失败**：
+    - 重构剪贴板写入链路，在点击事件触发时第一时间同步调用 `navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })])`，将异步转换与拉取原图操作封装在 Promise 中交由剪贴板 API 延迟解析，完美保持 Safari 的瞬态手势权限。
+    - 对老旧浏览器增加平滑降级（先等待 Promise 再执行写入），确保全平台兼容。
+  - **同步解析 Base64 Data URL**：
+    - 针对 PNG Base64 格式缩略图引入同步解码转 Blob 机制，彻底消除不必要的异步 `fetch(dataUrl)` 延迟开销，提升所有现代浏览器（Chrome / Edge / Firefox）的复制响应速度。
+  - **Canvas 转 PNG 效率优化**：
+    - 使用原生 `canvas.toBlob` 直接输出 PNG Blob，替代原本 `toDataURL` 再 `fetch` 的重复流转。
+  - **优化原图复制与分享详情页图片复制**：
+    - 同步优化“复制原图”（网络请求原图 + 失败自动回退缩略图）与分享页图片查看器的复制逻辑，确保 Safari / iOS Safari / Chrome 各端体验一致。
+
 ## 1.6.5（2026-08-27）
 
 - **超长文本消息体验优化（行数限制与沉浸式文本查看器）**：
