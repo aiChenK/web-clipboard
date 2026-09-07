@@ -45,6 +45,15 @@ const socketHelper = {
     } else {
       this.io.emit('message-favorite', data);
     }
+  },
+
+  // 广播备注变更
+  broadcastRemark(userId, data) {
+    if (MULTI_USER_MODE && userId) {
+      this.io.to(userId).emit('message-remark', data);
+    } else {
+      this.io.emit('message-remark', data);
+    }
   }
 };
 

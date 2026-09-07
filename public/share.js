@@ -10,6 +10,8 @@ const shareTime = document.getElementById('share-time');
 const shareViews = document.getElementById('share-views');
 const shareMessage = document.getElementById('share-message');
 const shareDeletedNotice = document.getElementById('share-deleted-notice');
+const shareRemark = document.getElementById('share-remark');
+const shareRemarkText = document.getElementById('share-remark-text');
 const toastEl = document.getElementById('toast');
 
 let shareId = null;
@@ -118,6 +120,13 @@ function getFileContent(content) {
 
 function renderMessage(msg) {
   shareMessage.innerHTML = '';
+
+  if (msg.remark && shareRemark && shareRemarkText) {
+    shareRemarkText.textContent = msg.remark;
+    shareRemark.classList.remove('hidden');
+  } else if (shareRemark) {
+    shareRemark.classList.add('hidden');
+  }
 
   if (msg.type === 'text') {
     const textEl = document.createElement('div');

@@ -81,6 +81,7 @@ function normalizePersistedState(state) {
       if (!Number.isFinite(message.timestamp)) return null;
       if (!['text', 'image', 'file'].includes(message.type)) return null;
       message.favorite = Boolean(message.favorite);
+      message.remark = typeof message.remark === 'string' ? message.remark : '';
       return message;
     })
     .filter(Boolean);

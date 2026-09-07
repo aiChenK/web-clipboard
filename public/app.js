@@ -501,11 +501,35 @@ function createMessageElement(msg, isFavoritesView = false) {
     actionsEl.appendChild(downloadBtn);
   }
 
-  actionsEl.appendChild(favoriteBtn);
-  actionsEl.appendChild(deleteBtn);
-  messageEl.appendChild(actionsEl);
-  return messageEl;
-}
+    const remarkBtn = document.createElement('button');
+    remarkBtn.className = 'btn btn-secondary message-remark-action';
+    if (msg.remark) {
+      remarkBtn.classList.add('has-remark');
+    }
+    remarkBtn.textContent = '📝 备注';
+    remarkBtn.title = msg.remark ? '修改备注' : '添加备注';
+    remarkBtn.addEventListener('click', () => openRemarkModal(msg));
+    actionsEl.appendChild(remarkBtn);
+
+    actionsEl.appendChild(favoriteBtn);
+    actionsEl.appendChild(deleteBtn);
+
+    const remarkBoxEl = document.createElement('div');
+    remarkBoxEl.className = 'message-remark-box' + (msg.remark ? '' : ' hidden');
+    remarkBoxEl.title = '点击修改备注';
+    remarkBoxEl.innerHTML = `
+      <span class="message-remark-label">📝 备注：</span><span class="message-remark-text"></span>
+    `;
+    remarkBoxEl.querySelector('.message-remark-text').textContent = msg.remark || '';
+    remarkBoxEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openRemarkModal(msg);
+    });
+
+    messageEl.appendChild(remarkBoxEl);
+    messageEl.appendChild(actionsEl);
+    return messageEl;
+  }
 
 function formatFileSize(size) {
   if (!Number.isFinite(size) || size <= 0) return '0 B';
@@ -619,6 +643,52 @@ function updateSingleMessageFavorite(id, favorite) {
   updateElement(messagesList);
   if (currentTab === 'favorites') {
     renderFavorites();
+  }
+}
+
+function updateSingleMessageRemark(id, remark) {
+  const cleanRemark = typeof remark === 'string' ? remark : '';
+  const msgInList = messages.find((m) => m.id === id);
+  if (msgInList) {
+    msgInList.remark = cleanRemark;
+  }
+  const favInList = favorites.find((f) => f.id === id);
+  if (favInList) {
+    favInList.remark = cleanRemark;
+  }
+
+  const updateElement = (container) => {
+    if (!container) return;
+    const msgEl = container.querySelector(`.message[data-id="${CSS.escape(id)}"]`);
+    if (msgEl) {
+      const remarkBox = msgEl.querySelector('.message-remark-box');
+      if (remarkBox) {
+        const textEl = remarkBox.querySelector('.message-remark-text');
+        if (cleanRemark) {
+          if (textEl) textEl.textContent = cleanRemark;
+          remarkBox.classList.remove('hidden');
+        } else {
+          if (textEl) textEl.textContent = '';
+          remarkBox.classList.add('hidden');
+        }
+      }
+
+      const remarkBtn = msgEl.querySelector('.message-remark-action');
+      if (remarkBtn) {
+        if (cleanRemark) {
+          remarkBtn.classList.add('has-remark');
+          remarkBtn.title = '修改备注';
+        } else {
+          remarkBtn.classList.remove('has-remark');
+          remarkBtn.title = '添加备注';
+        }
+      }
+    }
+  };
+
+  updateElement(messagesList);
+  if (favoritesList) {
+    updateElement(favoritesList);
   }
 }
 
@@ -1860,6 +1930,12 @@ socket.on('message-favorite', (data) => {
   updateSingleMessageFavorite(id, favorite);
 });
 
+socket.on('message-remark', (data) => {
+  if (!isAuthenticated || !data) return;
+  const { id, remark } = data;
+  updateSingleMessageRemark(id, remark);
+});
+
 // 拖放文件处理
 let dragCounter = 0;
 
@@ -2246,6 +2322,9 @@ document.addEventListener('keydown', (e) => {
     if (textViewer && !textViewer.classList.contains('hidden')) {
       closeTextViewer();
     }
+    if (remarkModal && !remarkModal.classList.contains('hidden')) {
+      closeRemarkModal();
+    }
   }
 });
 
@@ -2320,3 +2399,146 @@ if ('serviceWorker' in navigator) {
       .catch((err) => console.error('ServiceWorker 注册失败:', err));
   });
 }
+
+// ========== 备注功能 ==========
+const remarkModal = document.getElementById('remark-modal');
+const remarkModalPreview = document.getElementById('remark-modal-preview');
+const remarkInput = document.getElementById('remark-input');
+const remarkCharCount = document.getElementById('remark-char-count');
+const remarkCancelBtn = document.getElementById('remark-cancel-btn');
+const remarkClearBtn = document.getElementById('remark-clear-btn');
+const remarkSaveBtn = document.getElementById('remark-save-btn');
+
+let currentRemarkMessage = null;
+
+function updateRemarkCharCount() {
+  if (!remarkCharCount || !remarkInput) return;
+  const count = remarkInput.value.length;
+  remarkCharCount.textContent = `${count} / 500`;
+  if (count >= 500) {
+    remarkCharCount.style.color = '#e53e3e';
+  } else {
+    remarkCharCount.style.color = '#a0aec0';
+  }
+}
+
+function openRemarkModal(msg) {
+  currentRemarkMessage = msg;
+  if (!remarkModal || !remarkInput) return;
+
+  // 渲染消息摘要预览
+  if (remarkModalPreview) {
+    let previewText = '';
+    if (msg.type === 'text') {
+      const plainText = (msg.content || '').replace(/\s+/g, ' ').trim();
+      previewText = `文本: ${plainText.slice(0, 50)}${plainText.length > 50 ? '...' : ''}`;
+    } else if (msg.type === 'image') {
+      previewText = `图片: [${formatTime(msg.timestamp)}]`;
+    } else if (msg.type === 'file') {
+      const fileData = getFileContent(msg.content);
+      previewText = `文件: ${fileData.name || '附件'}`;
+    }
+    remarkModalPreview.textContent = previewText || '消息';
+  }
+
+  remarkInput.value = msg.remark || '';
+  updateRemarkCharCount();
+
+  if (remarkClearBtn) {
+    if (msg.remark) {
+      remarkClearBtn.classList.remove('hidden');
+    } else {
+      remarkClearBtn.classList.add('hidden');
+    }
+  }
+
+  remarkModal.classList.remove('hidden');
+  setTimeout(() => {
+    remarkInput.focus();
+    remarkInput.setSelectionRange(remarkInput.value.length, remarkInput.value.length);
+  }, 50);
+}
+
+function closeRemarkModal() {
+  if (remarkModal) {
+    remarkModal.classList.add('hidden');
+  }
+  currentRemarkMessage = null;
+}
+
+async function saveRemark(newRemark = null) {
+  if (!currentRemarkMessage) return;
+
+  const targetId = currentRemarkMessage.id;
+  const remarkToSave = typeof newRemark === 'string' ? newRemark : remarkInput.value.trim();
+
+  try {
+    if (remarkSaveBtn) {
+      remarkSaveBtn.disabled = true;
+      remarkSaveBtn.textContent = '保存中...';
+    }
+
+    const params = new URLSearchParams();
+    if (currentMode === 'multi' && userId) {
+      params.set('userId', userId);
+    }
+
+    const res = await authFetch(`/api/messages/${encodeURIComponent(targetId)}/remark?${params.toString()}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remark: remarkToSave })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || '保存备注失败');
+    }
+
+    updateSingleMessageRemark(targetId, remarkToSave);
+    closeRemarkModal();
+    showToast(remarkToSave ? '备注已保存' : '备注已清除');
+  } catch (error) {
+    console.error('保存备注错误:', error);
+    showToast(error.message || '保存备注失败');
+  } finally {
+    if (remarkSaveBtn) {
+      remarkSaveBtn.disabled = false;
+      remarkSaveBtn.textContent = '保存';
+    }
+  }
+}
+
+if (remarkCancelBtn) {
+  remarkCancelBtn.addEventListener('click', closeRemarkModal);
+}
+
+if (remarkClearBtn) {
+  remarkClearBtn.addEventListener('click', () => {
+    saveRemark('');
+  });
+}
+
+if (remarkSaveBtn) {
+  remarkSaveBtn.addEventListener('click', () => {
+    saveRemark();
+  });
+}
+
+if (remarkInput) {
+  remarkInput.addEventListener('input', updateRemarkCharCount);
+  remarkInput.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      saveRemark();
+    }
+  });
+}
+
+if (remarkModal) {
+  remarkModal.addEventListener('click', (e) => {
+    if (e.target === remarkModal) {
+      closeRemarkModal();
+    }
+  });
+}
+

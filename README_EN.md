@@ -17,6 +17,7 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
 - File uploading/downloading, **supporting inline multimedia playback previews for audio and video messages directly on the page (v1.6.0+)**
 - **Deep system clipboard integration: Double-click paste button to "paste & send", automatically focuses and loads clipboard when pasting via shortcuts while the page is inactive (v1.6.0+)**
 - **Message sharing feature, generating shareable links with passwords and expiration times (v1.5.0+)**
+- **Message remark feature, allowing users to add and edit contextual notes for text, image, and file messages with real-time multi-device sync (v1.6.7+)**
 - Server-side message persistence, preventing data loss upon service restarts
 - Message deletion and one-click clear, clearing associated files simultaneously
 - Automatic expiration cleanup, automatically deleting outdated data

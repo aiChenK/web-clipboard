@@ -3,7 +3,11 @@ const { writeBinaryToUpload } = require('./upload');
 
 // 转换为公开消息格式
 function toPublicMessage(message, userId = null) {
-  const result = { ...message, favorite: Boolean(message.favorite) };
+  const result = {
+    ...message,
+    favorite: Boolean(message.favorite),
+    remark: typeof message.remark === 'string' ? message.remark : ''
+  };
 
   if (message.type === 'image') {
     const content = message.content;

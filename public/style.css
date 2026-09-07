@@ -1578,3 +1578,162 @@ header h1 {
     gap: 8px;
   }
 }
+
+/* ========== 消息备注展示与操作 ========== */
+.message-remark-box {
+  margin-top: 6px;
+  padding: 4px 10px;
+  background: #f4f6fb;
+  border-left: 2.5px solid #667eea;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: #4a5568;
+  cursor: pointer;
+  transition: background-color 0.2s, border-color 0.2s;
+  word-break: break-word;
+}
+
+.message-remark-box:hover {
+  background: #eef2ff;
+  border-left-color: #4c51bf;
+}
+
+.message-remark-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #5a67d8;
+  display: inline;
+  user-select: none;
+}
+
+.message-remark-text {
+  font-size: 0.8rem;
+  color: #2d3748;
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.message-remark-action {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.message-remark-action.has-remark {
+  background: #ebf4ff !important;
+  color: #3182ce !important;
+  border-color: #bee3f8 !important;
+  font-weight: 500;
+}
+
+.message-remark-action.has-remark:hover {
+  background: #bee3f8 !important;
+}
+
+/* ========== 备注编辑弹窗 ========== */
+.remark-modal-content {
+  min-width: 320px;
+  max-width: 480px;
+  text-align: left;
+}
+
+.remark-modal-content .modal-title {
+  margin: 0 0 12px 0;
+  font-size: 1.15rem;
+  color: #2d3748;
+  text-align: left;
+}
+
+.remark-modal-preview {
+  font-size: 0.8rem;
+  color: #718096;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: #f7fafc;
+  border-radius: 6px;
+  border: 1px solid #edf2f7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.remark-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.remark-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 90px;
+  max-height: 240px;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  outline: none;
+}
+
+.remark-textarea:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+}
+
+.remark-counter-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.remark-char-count {
+  font-size: 0.75rem;
+  color: #a0aec0;
+}
+
+.remark-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.remark-actions .btn-danger {
+  margin-right: auto;
+}
+
+/* ========== 分享页备注卡片 ========== */
+.share-remark-card {
+  margin-bottom: 12px;
+  padding: 4px 10px;
+  background: #f4f6fb;
+  border-left: 3px solid #667eea;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.share-remark-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #5a67d8;
+  display: inline;
+  user-select: none;
+}
+
+.share-remark-text {
+  font-size: 0.82rem;
+  color: #2d3748;
+  display: inline;
+  word-break: break-word;
+  white-space: pre-wrap;
+}

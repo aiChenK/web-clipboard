@@ -36,10 +36,13 @@ router.post('/', requireAuth, async (req, res) => {
     return res.status(400).json({ error: '缺少必要参数' });
   }
 
+  const remark = typeof req.body.remark === 'string' ? req.body.remark.trim().slice(0, 500) : '';
+
   const message = {
     id: createMessageId(),
     type,
     content,
+    remark,
     timestamp: Date.now()
   };
 
@@ -160,10 +163,13 @@ router.post('/upload', requireAuth, (req, res, next) => {
     await fs.unlink(thumbFile.path).catch(() => {});
   }
 
+  const remark = typeof req.body.remark === 'string' ? req.body.remark.trim().slice(0, 500) : '';
+
   const message = {
     id,
     type,
     content: {},
+    remark,
     timestamp: Date.now()
   };
 
@@ -310,5 +316,29 @@ router.post('/clear', requireAuth, async (req, res) => {
 
   return res.json({ success: true, favoriteCount: favoriteMessages.length });
 });
+
+// 修改消息备注
+const handleUpdateRemark = async (req, res) => {
+  const userId = req.userId;
+  const state = getUserState(userId);
+  const { id } = req.params;
+  const message = state.messages.find((item) => item.id === id);
+  if (!message) {
+    return res.status(404).json({ error: '消息不存在' });
+  }
+
+  const remark = typeof req.body.remark === 'string' ? req.body.remark.trim().slice(0, 500) : '';
+  message.remark = remark;
+  state.lastActivity = Date.now();
+  schedulePersist(userId);
+
+  const publicMessage = toPublicMessage(message, userId);
+  req.app.get('io').broadcastRemark(userId, { id, remark, message: publicMessage });
+
+  return res.json({ success: true, message: publicMessage });
+};
+
+router.patch('/:id/remark', requireAuth, handleUpdateRemark);
+router.post('/:id/remark', requireAuth, handleUpdateRemark);
 
 module.exports = router;
