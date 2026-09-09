@@ -1,4 +1,4 @@
-const CACHE_NAME = 'web-clipboard-v1.6.7';
+const CACHE_NAME = 'web-clipboard-v1.6.8';
 const ASSETS = [
   '/',
   '/index.html',
@@ -6,6 +6,7 @@ const ASSETS = [
   '/style.css',
   '/app.js',
   '/share.js',
+  '/heic2any.min.js',
   '/favicon.svg',
   '/socket.io/socket.io.js'
 ];

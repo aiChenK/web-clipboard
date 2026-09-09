@@ -1585,15 +1585,79 @@ async function createThumbnailBlob(fileOrBlob) {
   return compressImageToBlob(fileOrBlob, 1920, 0.92);
 }
 
-function confirmLargeImageUpload(file) {
+// 判定是否为 HEIC/HEIF 格式
+function isHeicFile(file) {
+  if (!file) return false;
+  const mime = (file.type || '').toLowerCase();
+  if (mime === 'image/heic' || mime === 'image/heif') return true;
+  const name = file.name || '';
+  const ext = name.split('.').pop().toLowerCase();
+  return ext === 'heic' || ext === 'heif';
+}
+
+// 动态载入本地 heic2any 库
+let heic2anyLoadingPromise = null;
+function ensureHeic2AnyLoaded() {
+  if (window.heic2any) return Promise.resolve(window.heic2any);
+  if (heic2anyLoadingPromise) return heic2anyLoadingPromise;
+
+  heic2anyLoadingPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/heic2any.min.js';
+    script.onload = () => {
+      resolve(window.heic2any);
+    };
+    script.onerror = (err) => {
+      heic2anyLoadingPromise = null;
+      reject(new Error('加载 HEIC 转换器失败'));
+    };
+    document.head.appendChild(script);
+  });
+
+  return heic2anyLoadingPromise;
+}
+
+// 若为 HEIC 格式则在前端自动转换为高质量 JPEG File
+async function convertHeicToJpegIfNeeded(file) {
+  if (!isHeicFile(file)) return file;
+
+  try {
+    showToast('检测到 HEIC 图片，正在转换格式...');
+    await ensureHeic2AnyLoaded();
+    const result = await window.heic2any({
+      blob: file,
+      toType: 'image/jpeg',
+      quality: 0.92
+    });
+
+    const jpegBlob = Array.isArray(result) ? result[0] : result;
+    const origName = file.name || `image-${Date.now()}.heic`;
+    const newName = origName.replace(/\.(heic|heif)$/i, '.jpg');
+
+    return new File([jpegBlob], newName, {
+      type: 'image/jpeg',
+      lastModified: file.lastModified || Date.now()
+    });
+  } catch (err) {
+    console.error('HEIC 转换失败:', err);
+    showToast('HEIC 图片转换失败，尝试原样上传');
+    return file;
+  }
+}
+
+function confirmLargeImageUpload(fileOrCount, totalSizeMB = null) {
   return new Promise((resolve) => {
     if (!imageCompressModal || !imageCompressMsg || !imageCompressBtn || !imageOriginalBtn || !imageCancelBtn) {
       resolve('compress');
       return;
     }
 
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
-    imageCompressMsg.textContent = `检测到当前图片较大（${sizeMB} MB），建议压缩后上传以大幅提升传输速度并节省带宽。`;
+    if (typeof fileOrCount === 'number') {
+      imageCompressMsg.textContent = `检测到本次有 ${fileOrCount} 张图片较大（总计 ${totalSizeMB} MB），建议压缩后上传以大幅提升传输速度并节省带宽。`;
+    } else {
+      const sizeMB = (fileOrCount.size / (1024 * 1024)).toFixed(1);
+      imageCompressMsg.textContent = `检测到当前图片较大（${sizeMB} MB），建议压缩后上传以大幅提升传输速度并节省带宽。`;
+    }
     imageCompressModal.classList.remove('hidden');
 
     const cleanup = () => {
@@ -1640,8 +1704,8 @@ function confirmLargeImageUpload(file) {
   });
 }
 
-async function handleSingleImageFile(file) {
-  if (!file || !file.type || !file.type.startsWith('image/')) return;
+async function handleSingleImageFile(file, preChoice = null) {
+  if (!file || !isImageFile(file)) return;
 
   // 1. 如果图片 <= 3MB：100% 原始无损直传，完全不进行有损转码，确保极致清晰度
   if (file.size <= LARGE_IMAGE_THRESHOLD_BYTES) {
@@ -1652,8 +1716,9 @@ async function handleSingleImageFile(file) {
     return;
   }
 
-  // 2. 如果图片 > 3MB：弹出确认框询问用户
-  const choice = await confirmLargeImageUpload(file);
+  // 2. 如果图片 > 3MB：
+  // 若传入了预先确认的选择（preChoice），直接使用；否则单独询问
+  const choice = preChoice || await confirmLargeImageUpload(file);
   if (choice === 'cancel') {
     return;
   }
@@ -1693,20 +1758,54 @@ function isImageFile(file) {
 }
 
 async function handleImageFiles(files) {
-  for (const file of files) {
-    if (!isImageFile(file)) continue;
-    await handleSingleImageFile(file);
+  const fileArray = Array.from(files || []).filter((f) => isImageFile(f));
+  if (fileArray.length === 0) return;
+
+  // 第一步：若存在 HEIC 格式图片，执行无感转码
+  const processedFiles = [];
+  for (const file of fileArray) {
+    const converted = await convertHeicToJpegIfNeeded(file);
+    processedFiles.push(converted);
+  }
+
+  // 第二步：统计超过 3MB 的大图
+  const largeFiles = processedFiles.filter((f) => f.size > LARGE_IMAGE_THRESHOLD_BYTES);
+  let batchChoice = null;
+
+  if (largeFiles.length > 1) {
+    const totalBytes = largeFiles.reduce((sum, f) => sum + f.size, 0);
+    const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
+    batchChoice = await confirmLargeImageUpload(largeFiles.length, totalMB);
+    if (batchChoice === 'cancel') {
+      return;
+    }
+  }
+
+  // 第三步：逐个处理并加入上传队列
+  for (const file of processedFiles) {
+    await handleSingleImageFile(file, batchChoice);
   }
 }
 
 async function handleFileUpload(files) {
-  for (const file of files) {
-    if (!file) continue;
+  const fileArray = Array.from(files || []).filter(Boolean);
+  const imageFiles = [];
+  const normalFiles = [];
+
+  for (const file of fileArray) {
     if (isImageFile(file)) {
-      await handleSingleImageFile(file);
+      imageFiles.push(file);
     } else {
-      queueUpload('file', file);
+      normalFiles.push(file);
     }
+  }
+
+  if (imageFiles.length > 0) {
+    await handleImageFiles(imageFiles);
+  }
+
+  for (const file of normalFiles) {
+    queueUpload('file', file);
   }
 }
 
@@ -1813,13 +1912,17 @@ tabs.forEach((tab) => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
-imageInput.addEventListener('change', (e) => {
-  handleImageFiles(e.target.files);
+imageInput.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
   imageInput.value = '';
+  if (files.length === 0) return;
+  await handleImageFiles(files);
 });
-fileInput.addEventListener('change', (e) => {
-  handleFileUpload(e.target.files);
+fileInput.addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
   fileInput.value = '';
+  if (files.length === 0) return;
+  await handleFileUpload(files);
 });
 
 messagesList.addEventListener('scroll', () => {
@@ -1965,15 +2068,15 @@ async function handleDrop(e) {
   dropOverlay.classList.add('hidden');
   dropZone.classList.remove('drag-over');
 
-  const files = e.dataTransfer.files;
-  if (!files || files.length === 0) return;
+  const files = Array.from(e.dataTransfer.files || []);
+  if (files.length === 0) return;
 
   // 分离图片和普通文件
   const imageFiles = [];
   const otherFiles = [];
 
   for (const file of files) {
-    if (file.type.startsWith('image/')) {
+    if (isImageFile(file)) {
       imageFiles.push(file);
     } else {
       otherFiles.push(file);
