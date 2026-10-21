@@ -796,10 +796,30 @@ header h1 {
   }
 }
 
+.confirm-modal-content {
+  max-width: 400px;
+  padding: 24px 28px;
+}
+
 .modal-content p {
   font-size: 1rem;
   color: #333;
   margin-bottom: 20px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.modal-hint {
+  font-size: 0.82rem !important;
+  color: #888 !important;
+  background: #f8f9fa;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-top: -6px;
+  margin-bottom: 20px !important;
+  text-align: left;
+  line-height: 1.5;
 }
 
 .modal-actions {

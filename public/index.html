@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.6.8">
+  <link rel="stylesheet" href="style.css?v=1.6.9">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1a1a1a">
   <link rel="apple-touch-icon" href="/favicon.svg">
@@ -107,6 +107,7 @@
           <span id="message-count">0 条消息</span>
         </div>
         <div class="status-bar-right">
+          <button id="clear-cache-btn" class="btn btn-small btn-secondary" type="button" title="查看并清理本地图片缓存">清理缓存</button>
           <button id="my-shares-btn" class="btn btn-small btn-secondary" type="button">我的分享</button>
           <button id="logout-btn" class="btn btn-small btn-secondary" type="button">退出</button>
         </div>
@@ -117,8 +118,9 @@
   <div id="toast" class="toast hidden"></div>
 
   <div id="confirm-modal" class="modal hidden">
-    <div class="modal-content">
+    <div class="modal-content confirm-modal-content">
       <p id="modal-message">确定要清空所有消息吗？</p>
+      <p id="modal-hint" class="modal-hint hidden"></p>
       <div class="modal-actions">
         <button id="modal-cancel" class="btn btn-secondary">取消</button>
         <button id="modal-confirm" class="btn btn-danger">确定</button>
@@ -235,7 +237,8 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="app.js?v=1.6.8"></script>
+  <script src="cache.js?v=1.6.9"></script>
+  <script src="app.js?v=1.6.9"></script>
 </body>
 
 </html>

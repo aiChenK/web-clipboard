@@ -30,6 +30,7 @@ const fileInput = document.getElementById('file-input');
 const pasteImageBtn = document.getElementById('paste-image');
 const clearAllBtn = document.getElementById('clear-all');
 const logoutBtn = document.getElementById('logout-btn');
+const clearCacheBtn = document.getElementById('clear-cache-btn');
 const currentUserEl = document.getElementById('current-user');
 const connectionStatus = document.getElementById('connection-status');
 const messageCount = document.getElementById('message-count');
@@ -104,7 +105,7 @@ const imageObserver = 'IntersectionObserver' in window
         if (!entry.isIntersecting) return;
         const img = entry.target;
         if (!img.src) {
-          img.src = img.dataset.src;
+          loadImageWithCache(img);
         }
         imageObserver.unobserve(img);
       });
@@ -243,12 +244,90 @@ function setTopLoading(visible) {
   topLoadingIndicator.classList.toggle('hidden', !visible);
 }
 
+function revokeBlobUrls(container) {
+  if (!container) return;
+  const imgs = container.querySelectorAll('img');
+  imgs.forEach((img) => {
+    if (img._blobUrl) {
+      try {
+        URL.revokeObjectURL(img._blobUrl);
+      } catch (e) {
+        // ignore
+      }
+      img._blobUrl = null;
+    }
+  });
+}
+
+async function updateCacheButtonDisplay() {
+  if (!clearCacheBtn || !window.ImageCache) return;
+  try {
+    const stats = await window.ImageCache.getCacheStats(userId);
+    clearCacheBtn.title = `本地图片缓存: ${stats.count} 张 (${stats.formattedSize})`;
+    if (stats.count > 0) {
+      clearCacheBtn.textContent = `清理缓存 (${stats.formattedSize})`;
+    } else {
+      clearCacheBtn.textContent = '清理缓存';
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+async function loadImageWithCache(img) {
+  const url = img.dataset.src;
+  if (!url) return;
+  if (url.startsWith('data:')) {
+    img.src = url;
+    return;
+  }
+
+  const messageId = img.dataset.messageId;
+  const isFavorite = img.dataset.favorite === '1';
+
+  // 1. 优先尝试从本地 IndexedDB 缓存加载
+  if (window.ImageCache && messageId) {
+    try {
+      const cached = await window.ImageCache.getThumbnail(userId, messageId);
+      if (cached && cached.blob) {
+        const objectUrl = URL.createObjectURL(cached.blob);
+        img._blobUrl = objectUrl;
+        img.src = objectUrl;
+        return;
+      }
+    } catch (e) {
+      console.warn('读取本地图片缓存失败:', e);
+    }
+  }
+
+  // 2. 本地无缓存，从网络加载并存入 IndexedDB
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`fetch image failed: ${response.status}`);
+    }
+    const blob = await response.blob();
+    if (window.ImageCache && messageId) {
+      await window.ImageCache.setThumbnail(userId, messageId, url, blob, blob.type || 'image/webp', isFavorite);
+      updateCacheButtonDisplay();
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    img._blobUrl = objectUrl;
+    img.src = objectUrl;
+  } catch (error) {
+    // 降级使用原始 url，触发原生 img error 事件处理
+    img.src = url;
+  }
+}
+
 function renderLoadingState() {
+  revokeBlobUrls(messagesList);
   messagesList.innerHTML = '<div class="messages-loading">正在加载消息...</div>';
   updateMessageCount();
 }
 
 function renderEmptyState() {
+  revokeBlobUrls(messagesList);
   messagesList.innerHTML = `
     <div class="empty-state">
       <p>暂无消息</p>
@@ -268,7 +347,7 @@ function observeImage(img) {
     imageObserver.observe(img);
     return;
   }
-  img.src = img.dataset.src;
+  loadImageWithCache(img);
 }
 
 function createImageContent(msg) {
@@ -285,6 +364,8 @@ function createImageContent(msg) {
   img.alt = 'image';
   img.className = 'message-image loading';
   img.dataset.src = thumbnailUrl;
+  img.dataset.messageId = msg.id;
+  img.dataset.favorite = msg.favorite ? '1' : '0';
   img.loading = 'lazy';
   img.decoding = 'async';
 
@@ -555,6 +636,7 @@ function renderMessages({ scrollBottom = false } = {}) {
     fragment.appendChild(createMessageElement(msg));
   });
 
+  revokeBlobUrls(messagesList);
   messagesList.innerHTML = '';
   messagesList.appendChild(fragment);
   updateMessageCount();
@@ -574,6 +656,7 @@ function removeSingleMessage(id) {
     if (!container) return;
     const msgEl = container.querySelector(`.message[data-id="${CSS.escape(id)}"]`);
     if (msgEl) {
+      revokeBlobUrls(msgEl);
       msgEl.classList.add('deleting');
       setTimeout(() => {
         msgEl.remove();
@@ -597,6 +680,12 @@ function removeSingleMessage(id) {
         renderFavorites();
       }
     });
+  }
+
+  // 同步清理本地 IndexedDB 缓存
+  if (window.ImageCache) {
+    window.ImageCache.deleteThumbnail(userId, id);
+    updateCacheButtonDisplay();
   }
 }
 
@@ -764,6 +853,7 @@ function enterChatMode() {
 
   loadInitialMessages();
   loadFavorites();
+  updateCacheButtonDisplay();
 
   // 启动登录有效时长定时检测
   if (expireCheckInterval) clearInterval(expireCheckInterval);
@@ -843,6 +933,7 @@ async function toggleFavorite(id, isFavorite) {
 
 function renderFavorites() {
   if (favorites.length === 0) {
+    revokeBlobUrls(favoritesList);
     favoritesList.innerHTML = `
       <div class="empty-state">
         <p>暂无收藏</p>
@@ -856,11 +947,21 @@ function renderFavorites() {
   favorites.forEach((msg) => {
     fragment.appendChild(createMessageElement(msg, true));
   });
+  revokeBlobUrls(favoritesList);
   favoritesList.innerHTML = '';
   favoritesList.appendChild(fragment);
 }
 
 function logout(showMessage = true) {
+  const prevUserId = userId;
+  revokeBlobUrls(messagesList);
+  if (favoritesList) revokeBlobUrls(favoritesList);
+
+  if (window.ImageCache) {
+    window.ImageCache.clearUserThumbnails(prevUserId);
+    updateCacheButtonDisplay();
+  }
+
   socket.disconnect();
   localStorage.removeItem('web-clipboard-password');
   localStorage.removeItem('web-clipboard-user-id');
@@ -934,6 +1035,12 @@ async function loadInitialMessages() {
     initialLoaded = true;
     isInitialLoading = false;
     renderMessages({ scrollBottom: true });
+
+    // 触发后台过期清理与更新统计按钮
+    if (window.ImageCache) {
+      window.ImageCache.cleanupExpiredAndOverflow(userId, data.expireHours || 168);
+      updateCacheButtonDisplay();
+    }
   } catch (error) {
     isInitialLoading = false;
     renderMessages();
@@ -1270,13 +1377,25 @@ async function clearAllMessages() {
   });
 }
 
-function showConfirmModal(message, onConfirm) {
+function showConfirmModal(message, onConfirm, { hint = '' } = {}) {
   const modal = document.getElementById('confirm-modal');
   const modalMessage = document.getElementById('modal-message');
+  const modalHint = document.getElementById('modal-hint');
   const cancelBtn = document.getElementById('modal-cancel');
   const confirmBtn = document.getElementById('modal-confirm');
 
   modalMessage.textContent = message;
+
+  if (modalHint) {
+    if (hint) {
+      modalHint.textContent = hint;
+      modalHint.classList.remove('hidden');
+    } else {
+      modalHint.textContent = '';
+      modalHint.classList.add('hidden');
+    }
+  }
+
   modal.classList.remove('hidden');
 
   const closeModal = () => {
@@ -1906,6 +2025,30 @@ document.addEventListener('paste', (e) => {
 pasteImageBtn.addEventListener('click', pasteImage);
 clearAllBtn.addEventListener('click', clearAllMessages);
 logoutBtn.addEventListener('click', () => logout(true));
+
+if (clearCacheBtn) {
+  clearCacheBtn.addEventListener('click', async () => {
+    if (!window.ImageCache) return;
+    const stats = await window.ImageCache.getCacheStats(userId);
+    if (stats.count === 0) {
+      showToast('当前本地无图片缓存');
+      return;
+    }
+    showConfirmModal(
+      `确定要清理本地图片缓存吗？\n当前已缓存 ${stats.count} 张图片，共占用 ${stats.formattedSize}。`,
+      async () => {
+        await window.ImageCache.clearAllThumbnails();
+        revokeBlobUrls(messagesList);
+        if (favoritesList) revokeBlobUrls(favoritesList);
+        updateCacheButtonDisplay();
+        showToast('本地图片缓存已清理');
+      },
+      {
+        hint: '提示：清理后不影响云端消息，但刷新页面或再次查看时将重新从服务端下载。'
+      }
+    );
+  });
+}
 uploadProgressCancel.addEventListener('click', cancelUpload);
 
 tabs.forEach((tab) => {
@@ -2005,6 +2148,10 @@ socket.on('messages-clear', (data) => {
   if (currentTab === 'favorites') {
     renderFavorites();
   }
+  if (window.ImageCache) {
+    window.ImageCache.clearNonFavoriteThumbnails(userId);
+    updateCacheButtonDisplay();
+  }
   if (data && data.favoriteCount > 0) {
     showToast(`已清空，保留 ${data.favoriteCount} 条收藏`);
   }
@@ -2029,6 +2176,14 @@ socket.on('message-favorite', (data) => {
   } else {
     favorites = favorites.filter((f) => f.id !== id);
   }
+
+  if (window.ImageCache) {
+    window.ImageCache.updateFavoriteStatus(userId, id, favorite);
+  }
+  const targetImgs = document.querySelectorAll(`.message[data-id="${CSS.escape(id)}"] img.message-image`);
+  targetImgs.forEach((img) => {
+    img.dataset.favorite = favorite ? '1' : '0';
+  });
 
   updateSingleMessageFavorite(id, favorite);
 });
@@ -2353,8 +2508,13 @@ function openImageViewer(msg) {
 
   const imageData = getImageContent(msg.content);
 
-  // 显示缩略图
-  imageViewerImg.src = imageData.thumbnail;
+  // 优先复用列表中已经存在的 ObjectURL 避免低带宽下重复加载
+  const listImg = messagesList.querySelector(`.message[data-id="${CSS.escape(msg.id)}"] img.message-image`);
+  if (listImg && listImg.src) {
+    imageViewerImg.src = listImg.src;
+  } else {
+    imageViewerImg.src = imageData.thumbnail;
+  }
 
   // 如果有原图，显示原图按钮（需用户手动点击后加载）
   if (imageData.hasOriginal) {

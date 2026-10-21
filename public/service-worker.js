@@ -1,10 +1,11 @@
-const CACHE_NAME = 'web-clipboard-v1.6.8';
+const CACHE_NAME = 'web-clipboard-v1.6.9';
 const ASSETS = [
   '/',
   '/index.html',
   '/share.html',
   '/style.css',
   '/app.js',
+  '/cache.js',
   '/share.js',
   '/heic2any.min.js',
   '/favicon.svg',
