@@ -1,15 +1,25 @@
-const CACHE_NAME = 'web-clipboard-v1.6.9';
+const CACHE_NAME = 'web-clipboard-v1.7.0';
 const ASSETS = [
   '/',
   '/index.html',
   '/share.html',
   '/style.css',
-  '/app.js',
+  '/utils.js',
   '/cache.js',
+  '/app.js',
   '/share.js',
   '/heic2any.min.js',
   '/favicon.svg',
-  '/socket.io/socket.io.js'
+  '/socket.io/socket.io.js',
+  '/js/config.js',
+  '/js/state.js',
+  '/js/api.js',
+  '/js/socket.js',
+  '/js/media/image-process.js',
+  '/js/media/clipboard.js',
+  '/js/components/message-item.js',
+  '/js/components/modals.js',
+  '/js/components/share-modal.js'
 ];
 
 // 安装 Service Worker 并预缓存核心静态资产

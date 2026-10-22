@@ -1,27 +1,28 @@
 const express = require('express');
 const { MULTI_USER_MODE, ACCESS_PASSWORD, APP_VERSION, userPasswordMap } = require('../config');
 const { authLimiter } = require('../middleware/rateLimit');
+const { timingSafeCompare } = require('../utils');
 
 const router = express.Router();
 
-// 认证中间件：提取 userId
-function extractUserId(req, res, next) {
-  const body = req.body || {};
-  const query = req.query || {};
-  const headers = req.headers || {};
-  const userId = body.userId || query.userId || headers['x-user-id'];
-  req.userId = userId || null;
-  next();
-}
-
 // 认证 API
 router.post('/auth', authLimiter, (req, res) => {
-  const { password } = req.body;
+  const { password } = req.body || {};
+
+  if (typeof password !== 'string') {
+    return res.status(401).json({ success: false, error: '密码错误' });
+  }
 
   if (MULTI_USER_MODE) {
-    const userId = userPasswordMap.get(password);
-    if (userId) {
-      return res.json({ success: true, userId, mode: 'multi' });
+    let matchedUserId = null;
+    for (const [validPassword, userId] of userPasswordMap.entries()) {
+      if (timingSafeCompare(password, validPassword)) {
+        matchedUserId = userId;
+        break;
+      }
+    }
+    if (matchedUserId) {
+      return res.json({ success: true, userId: matchedUserId, mode: 'multi' });
     }
     return res.status(401).json({ success: false, error: '密码错误' });
   }
@@ -30,7 +31,7 @@ router.post('/auth', authLimiter, (req, res) => {
     return res.json({ success: true, noPassword: true, mode: 'single' });
   }
 
-  if (password === ACCESS_PASSWORD) {
+  if (timingSafeCompare(password, ACCESS_PASSWORD)) {
     res.json({ success: true, mode: 'single' });
   } else {
     res.status(401).json({ success: false, error: '密码错误' });
@@ -59,6 +60,5 @@ router.get('/version', (req, res) => {
 });
 
 module.exports = {
-  router,
-  extractUserId
+  router
 };

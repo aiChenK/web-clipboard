@@ -19,6 +19,8 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
 - **Message sharing feature, generating shareable links with passwords and expiration times (v1.5.0+)**
 - **Message remark feature, allowing users to add and edit contextual notes for text, image, and file messages with real-time multi-device sync (v1.6.7+)**
 - **Local image caching via IndexedDB for low-bandwidth environments, with real-time sync deletion, TTL and LRU quota cleanup (v1.6.9+)**
+- **Native ES Modules Architecture: Core component decoupling with clean data and network layer separation (v1.7.0+)**
+- **Comprehensive Security & Incremental Persistence: Strict attachment access control, XSS defense, timing/brute-force protection, and dirty-user incremental disk write (v1.7.0+)**
 - Server-side message persistence, preventing data loss upon service restarts
 - Message deletion and one-click clear, clearing associated files simultaneously
 - Automatic expiration cleanup, automatically deleting outdated data

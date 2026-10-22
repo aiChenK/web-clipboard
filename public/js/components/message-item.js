@@ -1,0 +1,284 @@
+/**
+ * 消息卡片 DOM 渲染组件 (文本、图片懒加载、音视频/文件)
+ */
+
+import { state } from '../state.js';
+import { STORAGE_KEYS } from '../config.js';
+import { copyTextToClipboard, copyImageToClipboard, copyOriginalImageWithFallback } from '../media/clipboard.js';
+
+export function createMessageElement(msg, {
+  isFavoritesView = false,
+  onOpenTextViewer,
+  onOpenImageViewer,
+  onOpenRemark,
+  onOpenShare,
+  onToggleFavorite,
+  onDelete,
+  onToast,
+  imageObserver
+} = {}) {
+  const utils = window.ClipboardUtils;
+  const messageEl = document.createElement('div');
+  messageEl.className = 'message';
+  if (msg.favorite) {
+    messageEl.classList.add('favorited');
+  }
+  messageEl.dataset.id = msg.id;
+
+  const headerEl = document.createElement('div');
+  headerEl.className = 'message-header';
+
+  const timeEl = document.createElement('span');
+  timeEl.className = 'message-time';
+  timeEl.textContent = utils ? utils.formatTime(msg.timestamp) : new Date(msg.timestamp).toLocaleString();
+  headerEl.appendChild(timeEl);
+
+  // 分享按钮放在头部右侧
+  const shareBtn = document.createElement('button');
+  shareBtn.className = 'message-share-btn';
+  shareBtn.title = '分享';
+  shareBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`;
+  shareBtn.addEventListener('click', () => onOpenShare && onOpenShare(msg));
+  headerEl.appendChild(shareBtn);
+
+  const actionsEl = document.createElement('div');
+  actionsEl.className = 'message-actions';
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = 'message-delete-action';
+  deleteBtn.textContent = '删除';
+  deleteBtn.addEventListener('click', () => onDelete && onDelete(msg.id));
+
+  const favoriteBtn = document.createElement('button');
+  favoriteBtn.className = 'btn btn-secondary message-favorite-action';
+  if (msg.favorite) {
+    favoriteBtn.classList.add('active');
+    favoriteBtn.classList.add('favorited');
+    favoriteBtn.textContent = '★ 已收藏';
+    favoriteBtn.title = '取消收藏';
+  } else {
+    favoriteBtn.textContent = '☆ 收藏';
+    favoriteBtn.title = '添加收藏';
+  }
+  favoriteBtn.addEventListener('click', () => onToggleFavorite && onToggleFavorite(msg.id));
+
+  // 根据类型渲染内容主体
+  if (msg.type === 'text') {
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content text';
+    contentEl.innerHTML = utils ? utils.renderSmartText(msg.content) : msg.content;
+
+    const lines = (msg.content || '').split('\n').length;
+    const isLongByContent = lines > 6 || (msg.content && msg.content.length > 220);
+
+    if (isLongByContent) {
+      contentEl.classList.add('is-collapsed');
+      contentEl.title = '点击查看完整内容';
+      contentEl.addEventListener('click', (e) => {
+        if (e.target.tagName.toLowerCase() === 'a') return;
+        if (onOpenTextViewer) onOpenTextViewer(msg);
+      });
+    }
+
+    messageEl.appendChild(headerEl);
+    messageEl.appendChild(contentEl);
+
+    requestAnimationFrame(() => {
+      if (contentEl.scrollHeight > 185 && !contentEl.classList.contains('is-collapsed')) {
+        contentEl.classList.add('is-collapsed');
+        contentEl.title = '点击查看完整内容';
+        contentEl.addEventListener('click', (e) => {
+          if (e.target.tagName.toLowerCase() === 'a') return;
+          if (onOpenTextViewer) onOpenTextViewer(msg);
+        });
+        if (!actionsEl.querySelector('.message-view-action')) {
+          const dynamicViewBtn = document.createElement('button');
+          dynamicViewBtn.className = 'btn btn-secondary message-view-action';
+          dynamicViewBtn.textContent = '查看';
+          dynamicViewBtn.title = '查看完整内容';
+          dynamicViewBtn.addEventListener('click', () => onOpenTextViewer && onOpenTextViewer(msg));
+          actionsEl.insertBefore(dynamicViewBtn, actionsEl.firstChild);
+        }
+      }
+    });
+
+    if (isLongByContent) {
+      const viewBtn = document.createElement('button');
+      viewBtn.className = 'btn btn-secondary message-view-action';
+      viewBtn.textContent = '查看';
+      viewBtn.title = '查看完整内容';
+      viewBtn.addEventListener('click', () => onOpenTextViewer && onOpenTextViewer(msg));
+      actionsEl.appendChild(viewBtn);
+    }
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'btn btn-secondary';
+    copyBtn.textContent = '复制';
+    copyBtn.addEventListener('click', () => copyTextToClipboard(msg.content, onToast));
+    actionsEl.appendChild(copyBtn);
+
+  } else if (msg.type === 'image') {
+    const imageData = utils ? utils.getImageContent(msg.content) : msg.content;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'message-content image';
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'image-placeholder';
+    placeholder.textContent = '图片加载中...';
+
+    const img = document.createElement('img');
+    img.alt = 'image';
+    img.className = 'message-image loading';
+    img.dataset.src = imageData.thumbnail;
+    img.dataset.messageId = msg.id;
+    img.dataset.favorite = msg.favorite ? '1' : '0';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+
+    img.addEventListener('load', () => {
+      img.classList.remove('loading');
+      placeholder.classList.add('hidden');
+      if (state.shouldStickToBottom) {
+        const list = document.getElementById('messages-list');
+        if (list) list.scrollTop = list.scrollHeight;
+      }
+    });
+
+    img.addEventListener('error', () => {
+      placeholder.textContent = '图片加载失败';
+      img.classList.add('hidden');
+    });
+
+    img.addEventListener('click', () => onOpenImageViewer && onOpenImageViewer(msg));
+
+    wrapper.appendChild(placeholder);
+    wrapper.appendChild(img);
+
+    if (imageObserver) {
+      imageObserver.observe(img);
+    } else {
+      img.src = imageData.thumbnail;
+    }
+
+    messageEl.appendChild(headerEl);
+    messageEl.appendChild(wrapper);
+
+    if (imageData.hasOriginal) {
+      const copyThumbBtn = document.createElement('button');
+      copyThumbBtn.className = 'btn btn-secondary';
+      copyThumbBtn.textContent = '复制缩略图';
+      copyThumbBtn.addEventListener('click', () => {
+        copyImageToClipboard(imageData.thumbnail, {
+          successToast: '缩略图已复制到剪贴板',
+          failureToast: '复制缩略图失败'
+        }, onToast);
+      });
+
+      const copyOriginalBtn = document.createElement('button');
+      copyOriginalBtn.className = 'btn btn-secondary';
+      copyOriginalBtn.textContent = '复制原图';
+      copyOriginalBtn.addEventListener('click', () => copyOriginalImageWithFallback(msg, onToast));
+      actionsEl.appendChild(copyThumbBtn);
+      actionsEl.appendChild(copyOriginalBtn);
+    } else {
+      const copyImageBtn = document.createElement('button');
+      copyImageBtn.className = 'btn btn-secondary';
+      copyImageBtn.textContent = '复制图片';
+      copyImageBtn.addEventListener('click', () => {
+        copyImageToClipboard(imageData.thumbnail, {
+          successToast: '图片已复制到剪贴板',
+          failureToast: '复制图片失败'
+        }, onToast);
+      });
+      actionsEl.appendChild(copyImageBtn);
+    }
+
+  } else if (msg.type === 'file') {
+    const fileData = utils ? utils.getFileContent(msg.content) : msg.content;
+    const contentEl = document.createElement('div');
+    contentEl.className = 'message-content file';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'file-name';
+    nameEl.textContent = fileData.name;
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'file-meta';
+    const sizeStr = utils ? utils.formatFileSize(fileData.size) : `${fileData.size} B`;
+    metaEl.textContent = `${sizeStr}${fileData.mimeType ? ` · ${fileData.mimeType}` : ''}`;
+
+    contentEl.appendChild(nameEl);
+    contentEl.appendChild(metaEl);
+
+    // 凭证链接拼装，供音视频播放和下载使用
+    const params = new URLSearchParams();
+    if (state.currentMode === 'multi' && state.userId) {
+      params.set('userId', state.userId);
+    }
+    const savedPassword = localStorage.getItem(STORAGE_KEYS.PASSWORD);
+    if (savedPassword) {
+      params.set('password', savedPassword);
+    }
+    const mediaUrl = `/api/messages/${msg.id}/file-download?${params.toString()}`;
+
+    // 如果是音频文件，内联音频播放器
+    if (fileData.mimeType && fileData.mimeType.startsWith('audio/')) {
+      const audioEl = document.createElement('audio');
+      audioEl.src = mediaUrl;
+      audioEl.controls = true;
+      audioEl.className = 'message-audio';
+      contentEl.appendChild(audioEl);
+    }
+
+    // 如果是视频文件，内联视频播放器
+    if (fileData.mimeType && fileData.mimeType.startsWith('video/')) {
+      const videoEl = document.createElement('video');
+      videoEl.src = mediaUrl;
+      videoEl.controls = true;
+      videoEl.preload = 'metadata';
+      videoEl.className = 'message-video';
+      contentEl.appendChild(videoEl);
+    }
+
+    messageEl.appendChild(headerEl);
+    messageEl.appendChild(contentEl);
+
+    const downloadBtn = document.createElement('button');
+    downloadBtn.className = 'btn btn-secondary';
+    downloadBtn.textContent = '下载文件';
+    downloadBtn.addEventListener('click', () => {
+      window.open(mediaUrl, '_blank', 'noopener');
+    });
+    actionsEl.appendChild(downloadBtn);
+  }
+
+  // 备注按钮与备注卡片
+  const remarkBtn = document.createElement('button');
+  remarkBtn.className = 'btn btn-secondary message-remark-action';
+  if (msg.remark) {
+    remarkBtn.classList.add('has-remark');
+  }
+  remarkBtn.textContent = '📝 备注';
+  remarkBtn.title = msg.remark ? '修改备注' : '添加备注';
+  remarkBtn.addEventListener('click', () => onOpenRemark && onOpenRemark(msg));
+  actionsEl.appendChild(remarkBtn);
+
+  actionsEl.appendChild(favoriteBtn);
+  actionsEl.appendChild(deleteBtn);
+
+  const remarkBoxEl = document.createElement('div');
+  remarkBoxEl.className = 'message-remark-box' + (msg.remark ? '' : ' hidden');
+  remarkBoxEl.title = '点击修改备注';
+  remarkBoxEl.innerHTML = `
+    <span class="message-remark-label">📝 备注：</span><span class="message-remark-text"></span>
+  `;
+  remarkBoxEl.querySelector('.message-remark-text').textContent = msg.remark || '';
+  remarkBoxEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (onOpenRemark) onOpenRemark(msg);
+  });
+
+  messageEl.appendChild(remarkBoxEl);
+  messageEl.appendChild(actionsEl);
+
+  return messageEl;
+}

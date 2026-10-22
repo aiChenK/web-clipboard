@@ -11,7 +11,7 @@ const singleUserState = {
   messages: [],
   lastActivity: Date.now()
 };
-let persistScheduled = false;
+const dirtyUserIds = new Set();
 let persistRunning = false;
 
 // 获取用户数据路径
@@ -195,20 +195,25 @@ async function migrateLegacyData(targetUserId) {
   return true;
 }
 
-// 调度持久化
+// 调度持久化（定向增量落盘，避免多用户写入放大）
 function schedulePersist(userId = null) {
-  persistScheduled = true;
+  dirtyUserIds.add(userId);
   if (persistRunning) return;
 
   setImmediate(async () => {
-    if (!persistScheduled || persistRunning) return;
-    persistScheduled = false;
+    if (dirtyUserIds.size === 0 || persistRunning) return;
     persistRunning = true;
+
+    // 取出当前批次的脏用户集合
+    const targetUsers = Array.from(dirtyUserIds);
+    dirtyUserIds.clear();
 
     try {
       if (MULTI_USER_MODE) {
-        for (const [uid] of userStates) {
-          await persistState(uid);
+        for (const uid of targetUsers) {
+          if (uid) {
+            await persistState(uid);
+          }
         }
       } else {
         await persistState(null);
@@ -217,7 +222,9 @@ function schedulePersist(userId = null) {
       console.error('持久化消息失败:', error);
     } finally {
       persistRunning = false;
-      if (persistScheduled) schedulePersist(userId);
+      if (dirtyUserIds.size > 0) {
+        schedulePersist();
+      }
     }
   });
 }

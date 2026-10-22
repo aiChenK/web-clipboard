@@ -1,7 +1,10 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
-const { createShare, getShareInfo, verifySharePassword, getShareContent, deleteShare, getShareList } = require('../share');
+const { shareVerifyLimiter } = require('../middleware/rateLimit');
+const { createShare, getShareInfo, verifySharePassword, getShareContent, deleteShare, getShareList, loadShare } = require('../share');
 const { SHARE_MAX_EXPIRE_HOURS } = require('../config');
+const { getUserState } = require('../storage');
+const { resolveUploadAbsolute } = require('../upload');
 
 const router = express.Router();
 
@@ -74,8 +77,8 @@ router.get('/:shareId', async (req, res) => {
   }
 });
 
-// 验证分享密码
-router.post('/:shareId/verify', async (req, res) => {
+// 验证分享密码（挂载 shareVerifyLimiter 严格防爆破限流）
+router.post('/:shareId/verify', shareVerifyLimiter, async (req, res) => {
   const { shareId } = req.params;
   const { password } = req.body;
 
@@ -123,14 +126,96 @@ router.get('/:shareId/content', async (req, res) => {
   }
 });
 
+// 安全受控获取分享图片（供未登录但持有有效分享权限的访客访问）
+router.get('/:shareId/image', async (req, res) => {
+  const { shareId } = req.params;
+  const { password } = req.query;
+
+  try {
+    const share = await loadShare(shareId);
+    if (!share) {
+      return res.status(404).json({ error: '分享不存在或已过期' });
+    }
+
+    if (share.expiresAt && Date.now() > share.expiresAt) {
+      await deleteShare(shareId);
+      return res.status(404).json({ error: '分享已过期' });
+    }
+
+    if (share.password) {
+      const verify = await verifySharePassword(shareId, password || '');
+      if (!verify.success) {
+        return res.status(401).json({ error: '需要密码或密码错误' });
+      }
+    }
+
+    const state = getUserState(share.userId);
+    const message = state.messages.find((item) => item.id === share.messageId);
+    if (!message || message.type !== 'image' || !message.content) {
+      return res.status(404).json({ error: '分享的图片已不存在' });
+    }
+
+    const targetPath = message.content.thumbnailPath || message.content.originalPath;
+    if (!targetPath) {
+      return res.status(404).json({ error: '图片文件不存在' });
+    }
+
+    const absolute = resolveUploadAbsolute(targetPath, share.userId);
+    return res.sendFile(absolute, {
+      headers: {
+        'Cache-Control': 'public, max-age=86400'
+      }
+    });
+  } catch (error) {
+    console.error('获取分享图片失败:', error);
+    return res.status(500).json({ error: '获取分享图片失败' });
+  }
+});
+
+// 安全受控获取分享文件（供未登录但持有有效分享权限的访客下载）
+router.get('/:shareId/file', async (req, res) => {
+  const { shareId } = req.params;
+  const { password } = req.query;
+
+  try {
+    const share = await loadShare(shareId);
+    if (!share) {
+      return res.status(404).json({ error: '分享不存在或已过期' });
+    }
+
+    if (share.expiresAt && Date.now() > share.expiresAt) {
+      await deleteShare(shareId);
+      return res.status(404).json({ error: '分享已过期' });
+    }
+
+    if (share.password) {
+      const verify = await verifySharePassword(shareId, password || '');
+      if (!verify.success) {
+        return res.status(401).json({ error: '需要密码或密码错误' });
+      }
+    }
+
+    const state = getUserState(share.userId);
+    const message = state.messages.find((item) => item.id === share.messageId);
+    if (!message || message.type !== 'file' || !message.content || !message.content.filePath) {
+      return res.status(404).json({ error: '分享的文件已不存在' });
+    }
+
+    const absolute = resolveUploadAbsolute(message.content.filePath, share.userId);
+    return res.download(absolute, message.content.name || 'file');
+  } catch (error) {
+    console.error('获取分享文件失败:', error);
+    return res.status(500).json({ error: '获取分享文件失败' });
+  }
+});
+
 // 取消分享
 router.delete('/:shareId', requireAuth, async (req, res) => {
   const userId = req.userId;
   const { shareId } = req.params;
 
   try {
-    // 验证分享属于当前用户
-    const { loadShare } = require('../share');
+    // 验证分享属于当前用户（使用模块顶层导入的 loadShare）
     const share = await loadShare(shareId);
 
     if (!share) {

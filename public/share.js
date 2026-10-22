@@ -25,98 +25,7 @@ function showToast(message) {
   }, 3000);
 }
 
-function formatTime(timestamp) {
-  const date = new Date(timestamp);
-  return date.toLocaleString('zh-CN');
-}
-
-function formatFileSize(size) {
-  if (!Number.isFinite(size) || size <= 0) return '0 B';
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function getImageContent(content) {
-  if (typeof content === 'string') {
-    return { thumbnail: content, hasOriginal: false };
-  }
-  if (content && typeof content === 'object') {
-    const thumbnail = typeof content.thumbnail === 'string' ? content.thumbnail : '';
-    const original = typeof content.original === 'string' ? content.original : '';
-    const hasOriginal = typeof content.hasOriginal === 'boolean'
-      ? content.hasOriginal
-      : Boolean(original && original !== thumbnail);
-    return { thumbnail: thumbnail || original, original, hasOriginal };
-  }
-  return { thumbnail: '', hasOriginal: false };
-}
-
-function escapeHTML(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
-function renderSmartText(text) {
-  if (!text) return '';
-
-  const placeholders = [];
-  let html = escapeHTML(text);
-
-  // 1. 提取 ``` 多行代码块并占位
-  html = html.replace(/```(\w*)\n([\s\S]*?)\n?```/g, (match, lang, code) => {
-    const placeholder = `___CODE_BLOCK_PLACEHOLDER_${placeholders.length}___`;
-    placeholders.push({
-      placeholder,
-      content: `<pre class="code-block"><code>${code}</code></pre>`
-    });
-    return placeholder;
-  });
-
-  // 2. 提取 ` 行内代码并占位
-  html = html.replace(/`([^`\n]+)`/g, (match, code) => {
-    const placeholder = `___INLINE_CODE_PLACEHOLDER_${placeholders.length}___`;
-    placeholders.push({
-      placeholder,
-      content: `<code class="inline-code">${code}</code>`
-    });
-    return placeholder;
-  });
-
-  // 3. 智能渲染 URL 链接
-  const urlRegex = /(\bhttps?:\/\/[^\s<]+[^.,?\s<])/gi;
-  html = html.replace(urlRegex, (url) => {
-    return `<a href="${url}" target="_blank" rel="noopener" class="message-link">${url}</a>`;
-  });
-
-  // 4. 将剩余文本换行符替换为 <br>
-  html = html.replace(/\n/g, '<br>');
-
-  // 5. 还原代码块
-  for (const item of placeholders) {
-    html = html.replace(item.placeholder, item.content);
-  }
-
-  return html;
-}
-
-function getFileContent(content) {
-  if (!content || typeof content !== 'object') {
-    return { name: '未知文件', size: 0, mimeType: '', url: '' };
-  }
-  return {
-    name: typeof content.name === 'string' ? content.name : '未知文件',
-    size: Number.isFinite(content.size) ? content.size : 0,
-    mimeType: typeof content.mimeType === 'string' ? content.mimeType : '',
-    url: typeof content.url === 'string' ? content.url : ''
-  };
-}
+// 工具函数（formatTime, formatFileSize, getImageContent, escapeHTML, renderSmartText, getFileContent 等已由 utils.js 统一提供）
 
 function renderMessage(msg) {
   shareMessage.innerHTML = '';
@@ -177,17 +86,19 @@ function renderMessage(msg) {
       shareMessage.appendChild(copyBtn);
     }
   } else if (msg.type === 'image') {
-    const imageData = getImageContent(msg.content);
     const imgContainer = document.createElement('div');
     imgContainer.className = 'share-image-container';
 
+    const pwdParam = verifiedPassword ? `?password=${encodeURIComponent(verifiedPassword)}` : '';
+    const shareImageUrl = `/api/share/${shareId}/image${pwdParam}`;
+
     const img = document.createElement('img');
     img.className = 'share-image';
-    img.src = imageData.thumbnail;
+    img.src = shareImageUrl;
     img.alt = '分享图片';
 
     img.addEventListener('click', () => {
-      openImageViewer(imageData);
+      openImageViewer({ thumbnail: shareImageUrl });
     });
 
     imgContainer.appendChild(img);
@@ -218,7 +129,8 @@ function renderMessage(msg) {
     downloadBtn.className = 'btn btn-primary share-action-btn';
     downloadBtn.textContent = '下载文件';
     downloadBtn.addEventListener('click', () => {
-      window.open(fileData.url, '_blank', 'noopener');
+      const pwdParam = verifiedPassword ? `?password=${encodeURIComponent(verifiedPassword)}` : '';
+      window.open(`/api/share/${shareId}/file${pwdParam}`, '_blank', 'noopener');
     });
     shareMessage.appendChild(downloadBtn);
   }
@@ -387,24 +299,7 @@ function closeImageViewer() {
   isViewingOriginal = false;
 }
 
-function dataURLtoBlobSync(dataUrl) {
-  try {
-    const parts = dataUrl.split(',');
-    if (parts.length !== 2) return null;
-    const match = parts[0].match(/:(.*?);/);
-    const mime = match ? match[1] : 'image/png';
-    const bstr = atob(parts[1]);
-    let n = bstr.length;
-    const u8arr = new Uint8Array(n);
-    while (n--) {
-      u8arr[n] = bstr.charCodeAt(n);
-    }
-    return new Blob([u8arr], { type: mime });
-  } catch (e) {
-    console.error('dataURLtoBlobSync 失败:', e);
-    return null;
-  }
-}
+// dataURLtoBlobSync 已由 utils.js 统一提供
 
 function convertImageSourceToPngBlob(src) {
   return new Promise((resolve, reject) => {

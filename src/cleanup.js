@@ -193,15 +193,49 @@ async function cleanupAllUsersOrphanFiles() {
   }
 }
 
+// 清理 temp 目录中的孤儿临时上传文件（默认清理超过 2 小时的遗留文件）
+async function cleanupTempUploads(maxAgeMs = 2 * 60 * 60 * 1000) {
+  const tempRoot = path.join(STORAGE_ROOT, 'temp');
+  try {
+    const allTempFiles = await listAllFilesRecursive(tempRoot);
+    const now = Date.now();
+    let removedCount = 0;
+
+    for (const filePath of allTempFiles) {
+      try {
+        const stats = await fs.stat(filePath);
+        if (now - stats.mtimeMs > maxAgeMs) {
+          await fs.unlink(filePath).catch(() => {});
+          removedCount += 1;
+        }
+      } catch (e) {
+        // 文件可能在处理中被正常 rename，忽略 ENOENT
+      }
+    }
+
+    await removeEmptyDirsRecursive(tempRoot, true);
+
+    if (removedCount > 0) {
+      console.log(`临时文件清理完成，删除 ${removedCount} 个过期临时文件`);
+    }
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') {
+      console.error('临时文件清理失败:', error);
+    }
+  }
+}
+
 // 启动清理定时任务
 function startCleanupSchedulers() {
-  // 服务启动时立即执行一次过期数据清理与分享清理
+  // 服务启动时立即执行一次过期数据、分享清理与临时上传清理
   cleanupAllUsersExpiredData().catch((error) => console.error('初始过期数据清理失败:', error));
   cleanupExpiredShares().catch((error) => console.error('初始过期分享清理失败:', error));
+  cleanupTempUploads().catch((error) => console.error('初始临时文件清理失败:', error));
 
   setInterval(cleanupAllUsersExpiredData, 5 * 60 * 1000);
   setInterval(cleanupAllUsersOrphanFiles, FILE_CLEANUP_INTERVAL_MINUTES * 60 * 1000);
   setInterval(cleanupExpiredShares, 5 * 60 * 1000);
+  setInterval(cleanupTempUploads, 30 * 60 * 1000); // 每 30 分钟清理一次遗留临时文件
 }
 
 module.exports = {
@@ -209,5 +243,6 @@ module.exports = {
   cleanupAllUsersExpiredData,
   cleanupOrphanDiskFiles,
   cleanupAllUsersOrphanFiles,
+  cleanupTempUploads,
   startCleanupSchedulers
 };

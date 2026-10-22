@@ -1,5 +1,6 @@
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 const { MIME_EXTENSION_MAP, MESSAGE_PAGE_SIZE, MULTI_USER_MODE } = require('./config');
 
 // 分页大小限制
@@ -130,6 +131,18 @@ function withPreferredExt(filename, fallbackExt) {
   return `${base}${ext}`;
 }
 
+// 恒定时间安全字符串比较，防范时序侧信道攻击
+function timingSafeCompare(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'utf8');
+  const bufB = Buffer.from(b, 'utf8');
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 module.exports = {
   clampPageSize,
   isDataUrl,
@@ -143,5 +156,6 @@ module.exports = {
   decodeDataUrl,
   normalizeImageIncomingContent,
   ensureDir,
-  withPreferredExt
+  withPreferredExt,
+  timingSafeCompare
 };

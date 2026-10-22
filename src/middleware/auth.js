@@ -1,4 +1,5 @@
 const { MULTI_USER_MODE, ACCESS_PASSWORD, userPasswordMap } = require('../config');
+const { timingSafeCompare } = require('../utils');
 
 // 统一的安全性认证中间件
 function requireAuth(req, res, next) {
@@ -16,7 +17,14 @@ function requireAuth(req, res, next) {
       return res.status(401).json({ error: '未授权访问：缺少凭证' });
     }
 
-    const matchedUserId = userPasswordMap.get(password);
+    let matchedUserId = null;
+    for (const [validPassword, mappedUser] of userPasswordMap.entries()) {
+      if (timingSafeCompare(password, validPassword)) {
+        matchedUserId = mappedUser;
+        break;
+      }
+    }
+
     if (!matchedUserId) {
       return res.status(401).json({ error: '未授权访问：凭证无效' });
     }
@@ -33,7 +41,7 @@ function requireAuth(req, res, next) {
 
   // 单用户模式
   if (ACCESS_PASSWORD) {
-    if (password !== ACCESS_PASSWORD) {
+    if (!timingSafeCompare(password, ACCESS_PASSWORD)) {
       return res.status(401).json({ error: '未授权访问：密码错误' });
     }
   }

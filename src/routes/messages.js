@@ -110,98 +110,106 @@ router.post('/upload', requireAuth, (req, res, next) => {
     return res.status(400).json({ error: '不支持的消息类型' });
   }
 
-  const id = createMessageId();
-  const category = type === 'image' ? 'images' : 'files';
-  const dateDir = toDateFolder();
-  const decodedName = decodeFilename(mainFile.originalname || 'file');
-  const safeName = sanitizeFilename(decodedName);
-  const parsed = path.parse(safeName);
-  const ext = parsed.ext || extensionFromMime(mainFile.mimetype) || '';
-  const suffix = type === 'image' ? '-orig' : '';
-  const filename = category === 'files'
-    ? `${id}-${parsed.name}${ext}`
-    : `${id}${suffix}${ext}`;
-
   const mainOldPath = mainFile.path;
-  const mainRelativePath = path.join(category, dateDir, filename);
-  const mainAbsolutePath = path.join(uploadRoot, mainRelativePath);
-
-  await ensureDir(path.dirname(mainAbsolutePath));
+  const thumbOldPath = thumbFile ? thumbFile.path : null;
 
   try {
-    await fs.rename(mainOldPath, mainAbsolutePath);
-  } catch (error) {
-    await fs.copyFile(mainOldPath, mainAbsolutePath);
-    await fs.unlink(mainOldPath).catch(() => {});
-  }
+    const id = createMessageId();
+    const category = type === 'image' ? 'images' : 'files';
+    const dateDir = toDateFolder();
+    const decodedName = decodeFilename(mainFile.originalname || 'file');
+    const safeName = sanitizeFilename(decodedName);
+    const parsed = path.parse(safeName);
+    const ext = parsed.ext || extensionFromMime(mainFile.mimetype) || '';
+    const suffix = type === 'image' ? '-orig' : '';
+    const filename = category === 'files'
+      ? `${id}-${parsed.name}${ext}`
+      : `${id}${suffix}${ext}`;
 
-  let thumbRelativePath = mainRelativePath;
-  let thumbMimeType = mainFile.mimetype;
+    const mainRelativePath = path.join(category, dateDir, filename);
+    const mainAbsolutePath = path.join(uploadRoot, mainRelativePath);
 
-  if (type === 'image' && thumbFile) {
-    const thumbExt = path.extname(thumbFile.originalname) || extensionFromMime(thumbFile.mimetype) || '.webp';
-    const thumbFilename = `${id}-thumb${thumbExt}`;
-    const thumbOldPath = thumbFile.path;
-    const thumbNewRelPath = path.join(category, dateDir, thumbFilename);
-    const thumbNewAbsPath = path.join(uploadRoot, thumbNewRelPath);
+    await ensureDir(path.dirname(mainAbsolutePath));
 
     try {
-      await fs.rename(thumbOldPath, thumbNewAbsPath);
-      thumbRelativePath = thumbNewRelPath;
-      thumbMimeType = thumbFile.mimetype;
+      await fs.rename(mainOldPath, mainAbsolutePath);
     } catch (error) {
+      await fs.copyFile(mainOldPath, mainAbsolutePath);
+      await fs.unlink(mainOldPath).catch(() => {});
+    }
+
+    let thumbRelativePath = mainRelativePath;
+    let thumbMimeType = mainFile.mimetype;
+
+    if (type === 'image' && thumbFile) {
+      const thumbExt = path.extname(thumbFile.originalname) || extensionFromMime(thumbFile.mimetype) || '.webp';
+      const thumbFilename = `${id}-thumb${thumbExt}`;
+      const thumbNewRelPath = path.join(category, dateDir, thumbFilename);
+      const thumbNewAbsPath = path.join(uploadRoot, thumbNewRelPath);
+
       try {
-        await fs.copyFile(thumbOldPath, thumbNewAbsPath);
-        await fs.unlink(thumbOldPath).catch(() => {});
+        await fs.rename(thumbOldPath, thumbNewAbsPath);
         thumbRelativePath = thumbNewRelPath;
         thumbMimeType = thumbFile.mimetype;
-      } catch (copyErr) {
-        console.error('保存缩略图失败，回退使用原图:', copyErr);
+      } catch (error) {
+        try {
+          await fs.copyFile(thumbOldPath, thumbNewAbsPath);
+          await fs.unlink(thumbOldPath).catch(() => {});
+          thumbRelativePath = thumbNewRelPath;
+          thumbMimeType = thumbFile.mimetype;
+        } catch (copyErr) {
+          console.error('保存缩略图失败，回退使用原图:', copyErr);
+        }
       }
+    } else if (thumbFile) {
+      await fs.unlink(thumbFile.path).catch(() => {});
     }
-  } else if (thumbFile) {
-    await fs.unlink(thumbFile.path).catch(() => {});
-  }
 
-  const remark = typeof req.body.remark === 'string' ? req.body.remark.trim().slice(0, 500) : '';
+    const remark = typeof req.body.remark === 'string' ? req.body.remark.trim().slice(0, 500) : '';
 
-  const message = {
-    id,
-    type,
-    content: {},
-    remark,
-    timestamp: Date.now()
-  };
-
-  if (type === 'image') {
-    message.content = {
-      originalPath: mainRelativePath,
-      thumbnailPath: thumbRelativePath,
-      hasOriginal: Boolean(thumbRelativePath && thumbRelativePath !== mainRelativePath),
-      originalMimeType: mainFile.mimetype,
-      thumbnailMimeType: thumbMimeType
+    const message = {
+      id,
+      type,
+      content: {},
+      remark,
+      timestamp: Date.now()
     };
-  } else {
-    message.content = {
-      name: safeName,
-      size: mainFile.size,
-      mimeType: mainFile.mimetype,
-      filePath: mainRelativePath
-    };
+
+    if (type === 'image') {
+      message.content = {
+        originalPath: mainRelativePath,
+        thumbnailPath: thumbRelativePath,
+        hasOriginal: Boolean(thumbRelativePath && thumbRelativePath !== mainRelativePath),
+        originalMimeType: mainFile.mimetype,
+        thumbnailMimeType: thumbMimeType
+      };
+    } else {
+      message.content = {
+        name: safeName,
+        size: mainFile.size,
+        mimeType: mainFile.mimetype,
+        filePath: mainRelativePath
+      };
+    }
+
+    state.messages.push(message);
+    state.lastActivity = Date.now();
+    schedulePersist(userId);
+
+    const publicMessage = toPublicMessage(message, userId);
+
+    req.app.get('io').broadcastMessage(userId, publicMessage);
+
+    return res.json({ success: true, message: publicMessage });
+  } catch (err) {
+    console.error('处理上传文件失败，清理临时文件:', err);
+    await fs.unlink(mainOldPath).catch(() => {});
+    if (thumbOldPath) await fs.unlink(thumbOldPath).catch(() => {});
+    return res.status(500).json({ error: '处理上传文件失败' });
   }
-
-  state.messages.push(message);
-  state.lastActivity = Date.now();
-  schedulePersist(userId);
-
-  const publicMessage = toPublicMessage(message, userId);
-
-  req.app.get('io').broadcastMessage(userId, publicMessage);
-
-  return res.json({ success: true, message: publicMessage });
 });
 
-// 获取原图
+// 获取原图（二进制流式返回，消除 Base64 内存尖峰与 OOM 风险）
 router.get('/:id/image-original', requireAuth, async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
@@ -219,10 +227,12 @@ router.get('/:id/image-original', requireAuth, async (req, res) => {
   if (content && typeof content === 'object' && typeof content.originalPath === 'string') {
     try {
       const absolute = resolveUploadAbsolute(content.originalPath, userId);
-      const binary = await fs.readFile(absolute);
-      const mimeType = content.originalMimeType || 'image/png';
-      const original = `data:${mimeType};base64,${binary.toString('base64')}`;
-      return res.json({ id: message.id, original });
+      return res.sendFile(absolute, {
+        headers: {
+          'Cache-Control': 'private, max-age=86400',
+          'Content-Type': content.originalMimeType || 'image/png'
+        }
+      });
     } catch (error) {
       if (error && error.code === 'ENOENT') {
         return res.status(404).json({ error: '原图不存在' });
@@ -233,8 +243,13 @@ router.get('/:id/image-original', requireAuth, async (req, res) => {
   }
 
   const legacy = normalizeImageIncomingContent(content);
-  if (legacy) {
-    return res.json({ id: message.id, original: legacy.original });
+  if (legacy && legacy.original) {
+    if (legacy.original.startsWith('data:')) {
+      const decoded = decodeDataUrl(legacy.original);
+      if (decoded && decoded.buffer) {
+        return res.type(decoded.mimeType || 'image/png').send(decoded.buffer);
+      }
+    }
   }
 
   return res.status(404).json({ error: '原图不存在' });

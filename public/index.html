@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.6.9">
+  <link rel="stylesheet" href="style.css?v=1.7.0">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1a1a1a">
   <link rel="apple-touch-icon" href="/favicon.svg">
@@ -161,7 +161,7 @@
   <div id="share-modal" class="modal hidden">
     <div class="modal-content share-modal-content">
       <h3 class="share-modal-title">创建分享链接</h3>
-      <div class="share-form">
+      <div id="share-form" class="share-form">
         <div class="share-form-group">
           <label for="share-expires">过期时间</label>
           <select id="share-expires" class="share-select">
@@ -237,8 +237,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="cache.js?v=1.6.9"></script>
-  <script src="app.js?v=1.6.9"></script>
+  <script src="utils.js?v=1.7.0"></script>
+  <script src="cache.js?v=1.7.0"></script>
+  <script type="module" src="app.js?v=1.7.0"></script>
 </body>
 
 </html>

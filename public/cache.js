@@ -324,17 +324,18 @@
             resolve({
               count,
               totalBytes,
+              size: totalBytes,
               formattedSize: formatBytes(totalBytes)
             });
           }
         };
 
         request.onerror = () => {
-          resolve({ count: 0, totalBytes: 0, formattedSize: '0 B' });
+          resolve({ count: 0, totalBytes: 0, size: 0, formattedSize: '0 B' });
         };
       });
     } catch (e) {
-      return { count: 0, totalBytes: 0, formattedSize: '0 B' };
+      return { count: 0, totalBytes: 0, size: 0, formattedSize: '0 B' };
     }
   }
 
@@ -428,7 +429,9 @@
     updateFavoriteStatus,
     clearUserThumbnails,
     clearAllThumbnails,
+    clearAll: clearAllThumbnails,
     getCacheStats,
+    getStats: getCacheStats,
     cleanupExpiredAndOverflow
   };
 })(window);

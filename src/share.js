@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { SHARE_DIR, SHARE_MAX_EXPIRE_HOURS } = require('./config');
-const { ensureDir, createMessageId } = require('./utils');
+const { ensureDir, createMessageId, timingSafeCompare } = require('./utils');
 const { getUserState } = require('./storage');
 const { toPublicMessage } = require('./message');
 
@@ -132,8 +132,8 @@ async function verifySharePassword(shareId, password) {
     return { success: true };
   }
 
-  // 校验密码
-  if (password !== share.password) {
+  // 恒定时间安全校验密码
+  if (!timingSafeCompare(password, share.password)) {
     return { success: false, error: '密码错误' };
   }
 

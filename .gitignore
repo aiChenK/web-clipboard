@@ -4,6 +4,4 @@ data/
 build.sh
 AGENTS.md
 .claude/
-skills/
-CLAUDE.md
-.gitnexus
+.agent_docs/
