@@ -108,7 +108,7 @@
    * 3. 对 href 属性实施严格的属性安全转义，并限制仅允许 http/https 协议；
    * 4. 彻底杜绝属性提前闭合与存储型/反射型 XSS 漏洞。
    */
-  function renderSmartText(text) {
+  function renderSmartText(text, keyword = '') {
     if (!text || typeof text !== 'string') return '';
 
     const placeholders = [];
@@ -153,12 +153,40 @@
     // 4. 将剩余纯文本转义为 HTML 实体，换行符转为 <br>
     let html = escapeHTML(processed).replace(/\n/g, '<br>');
 
+    // 4.1 若有高亮关键词，对文本实施高亮标记（规避占位符）
+    if (keyword && typeof keyword === 'string' && keyword.trim()) {
+      const safeKeyword = escapeHTML(keyword.trim());
+      const regex = new RegExp(`(${escapeRegExp(safeKeyword)})`, 'gi');
+      html = html.replace(regex, (match) => {
+        if (match.startsWith('__CB_')) return match;
+        return `<mark class="search-highlight">${match}</mark>`;
+      });
+    }
+
     // 5. 还原受保护的 HTML 占位符
     for (const item of placeholders) {
       html = html.replace(item.placeholder, item.content);
     }
 
     return html;
+  }
+
+  // 正则特殊字符转义
+  function escapeRegExp(string) {
+    return String(string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  // 纯文本安全高亮
+  function highlightText(text, keyword) {
+    if (!text) return '';
+    const str = String(text);
+    if (!keyword || typeof keyword !== 'string' || !keyword.trim()) {
+      return escapeHTML(str);
+    }
+    const safeStr = escapeHTML(str);
+    const safeKeyword = escapeHTML(keyword.trim());
+    const regex = new RegExp(`(${escapeRegExp(safeKeyword)})`, 'gi');
+    return safeStr.replace(regex, '<mark class="search-highlight">$1</mark>');
   }
 
   // 挂载工具函数
@@ -170,7 +198,9 @@
     getImageContent,
     getFileContent,
     dataURLtoBlobSync,
-    renderSmartText
+    renderSmartText,
+    escapeRegExp,
+    highlightText
   };
 
   global.ClipboardUtils = Utils;
@@ -184,5 +214,7 @@
   global.getFileContent = getFileContent;
   global.dataURLtoBlobSync = dataURLtoBlobSync;
   global.renderSmartText = renderSmartText;
+  global.escapeRegExp = escapeRegExp;
+  global.highlightText = highlightText;
 
 })(typeof window !== 'undefined' ? window : globalThis);

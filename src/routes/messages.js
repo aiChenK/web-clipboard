@@ -12,12 +12,14 @@ const { deleteSharesByMessageId } = require('../share');
 
 const router = express.Router();
 
-// 获取消息列表
+// 获取消息列表（支持关键词搜索与分类筛选）
 router.get('/', requireAuth, (req, res) => {
   const userId = req.userId;
   const before = Number(req.query.before);
   const limit = Number(req.query.limit);
-  const page = getMessagesPage({ before, limit, userId });
+  const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
+  const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'all';
+  const page = getMessagesPage({ before, limit, userId, keyword, category });
 
   res.json({
     ...page,

@@ -1,16 +1,23 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
-const { getUserState, schedulePersist } = require('../storage');
+const { getUserState, schedulePersist, filterMessages } = require('../storage');
 const { toPublicMessage } = require('../message');
 const { MULTI_USER_MODE } = require('../config');
 
 const router = express.Router();
 
-// 获取收藏列表
+// 获取收藏列表（支持关键词搜索与分类筛选）
 router.get('/', requireAuth, (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
-  const favorites = state.messages.filter((msg) => msg.favorite);
+  const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
+  const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'all';
+
+  let favorites = state.messages.filter((msg) => msg.favorite);
+  if (keyword || (category && category !== 'all')) {
+    favorites = filterMessages(favorites, { keyword, category });
+  }
+
   res.json({
     messages: favorites.map((msg) => toPublicMessage(msg, userId)),
     total: favorites.length

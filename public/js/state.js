@@ -24,7 +24,21 @@ class StateManager {
     this.currentXhr = null;
     this.shouldStickToBottom = false;
 
+    // 搜索与分类状态
+    this.searchKeyword = '';
+    this.searchCategory = 'all'; // 'all', 'text', 'image', 'video', 'file'
+    this.isSearchActive = false; // 搜索栏是否展开/处于搜索模式
+    this.searchTotal = 0;
+
     this.listeners = new Map();
+  }
+
+  resetSearch() {
+    this.searchKeyword = '';
+    this.searchCategory = 'all';
+    this.isSearchActive = false;
+    this.searchTotal = 0;
+    this.emit('searchReset');
   }
 
   on(event, callback) {

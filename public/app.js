@@ -17,6 +17,7 @@ import {
   fetchAuthStatus,
   login as apiLogin,
   fetchMessages,
+  fetchFavorites,
   sendTextMessage,
   uploadMediaWithProgress,
   toggleFavorite as apiToggleFavorite,
@@ -78,6 +79,14 @@ const imageProcessingState = document.getElementById('image-processing-state');
 const tabs = document.querySelectorAll('.tab');
 const dropZone = document.getElementById('drop-zone');
 const dropOverlay = document.getElementById('drop-overlay');
+
+// 搜索与分类 DOM
+const searchBarPanel = document.getElementById('search-bar-panel');
+const searchInput = document.getElementById('search-input');
+const searchClearBtn = document.getElementById('search-clear-btn');
+const searchPillsRow = document.getElementById('search-pills-row');
+const searchPills = document.querySelectorAll('.search-pill');
+const searchResultCount = document.getElementById('search-result-count');
 
 const uploadProgressContainer = document.getElementById('upload-progress-container');
 const uploadProgressFill = document.getElementById('upload-progress-fill');
@@ -211,7 +220,14 @@ function revokeBlobUrls(container) {
 
 // ========== 消息列表渲染与 DOM 更新 ==========
 function updateMessageCount() {
-  if (messageCount) messageCount.textContent = `${state.messages.length} 条消息`;
+  if (messageCount) {
+    if (state.isSearchActive) {
+      const total = Number.isFinite(state.searchTotal) ? state.searchTotal : state.messages.length;
+      messageCount.textContent = `筛选结果: ${state.messages.length}/${total} 条`;
+    } else {
+      messageCount.textContent = `${state.messages.length} 条消息`;
+    }
+  }
   if (clearAllBtn) clearAllBtn.disabled = state.messages.length === 0;
 }
 
@@ -225,8 +241,8 @@ function renderEmptyState() {
   revokeBlobUrls(messagesList);
   messagesList.innerHTML = `
     <div class="empty-state">
-      <p>暂无消息</p>
-      <p style="font-size: 0.8rem; margin-top: 8px;">发送文字、图片或文件开始使用</p>
+      <p>${state.isSearchActive ? '未找到匹配的消息' : '暂无消息'}</p>
+      <p style="font-size: 0.8rem; margin-top: 8px;">${state.isSearchActive ? '请尝试更换关键词或分类选项' : '发送文字、图片或文件开始使用'}</p>
     </div>
   `;
   updateMessageCount();
@@ -246,6 +262,7 @@ function renderMessages({ scrollBottom = false } = {}) {
   const fragment = document.createDocumentFragment();
   state.messages.forEach((msg) => {
     fragment.appendChild(createMessageElement(msg, {
+      searchKeyword: state.searchKeyword,
       onOpenTextViewer: (m) => textViewerModal.open(m),
       onOpenImageViewer: (m) => imageViewerModal.open(m),
       onOpenRemark: (m) => remarkModal.open(m),
@@ -275,6 +292,7 @@ function appendSingleMessage(msg) {
   }
 
   const el = createMessageElement(msg, {
+    searchKeyword: state.searchKeyword,
     onOpenTextViewer: (m) => textViewerModal.open(m),
     onOpenImageViewer: (m) => imageViewerModal.open(m),
     onOpenRemark: (m) => remarkModal.open(m),
@@ -412,8 +430,8 @@ function renderFavorites() {
     revokeBlobUrls(favoritesList);
     favoritesList.innerHTML = `
       <div class="empty-state">
-        <p>暂无收藏</p>
-        <p style="font-size: 0.8rem; margin-top: 8px;">点击消息旁的 ☆ 收藏重要内容</p>
+        <p>${state.isSearchActive ? '未找到符合条件的收藏消息' : '暂无收藏'}</p>
+        <p style="font-size: 0.8rem; margin-top: 8px;">${state.isSearchActive ? '请尝试更换关键词或分类选项' : '点击消息旁的 ☆ 收藏重要内容'}</p>
       </div>
     `;
     return;
@@ -423,6 +441,7 @@ function renderFavorites() {
   state.favorites.forEach((msg) => {
     fragment.appendChild(createMessageElement(msg, {
       isFavoritesView: true,
+      searchKeyword: state.searchKeyword,
       onOpenTextViewer: (m) => textViewerModal.open(m),
       onOpenImageViewer: (m) => imageViewerModal.open(m),
       onOpenRemark: (m) => remarkModal.open(m),
@@ -441,14 +460,13 @@ function renderFavorites() {
 
 async function loadFavorites() {
   try {
-    const params = new URLSearchParams();
-    if (state.currentMode === 'multi' && state.userId) {
-      params.set('userId', state.userId);
-    }
-    const response = await authFetch(`/api/favorites?${params.toString()}`);
-    if (!response.ok) return;
-    const data = await response.json();
+    const data = await fetchFavorites({
+      keyword: state.searchKeyword,
+      category: state.searchCategory
+    });
     state.favorites = data.messages || [];
+    state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
+    updateSearchResultCount();
     if (state.currentTab === 'favorites') {
       renderFavorites();
     }
@@ -490,9 +508,16 @@ async function loadInitialMessages() {
   renderMessages();
 
   try {
-    const data = await fetchMessages({ limit: PAGE_SIZE });
+    const data = await fetchMessages({
+      limit: PAGE_SIZE,
+      keyword: state.searchKeyword,
+      category: state.searchCategory
+    });
     state.messages = data.messages || [];
     state.hasMoreMessages = Boolean(data.hasMore);
+    state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
+    updateSearchResultCount();
+
     if (data.expireHours && expireInfo) {
       expireInfo.textContent = data.expireHours >= 24
         ? `消息将在 ${Math.round(data.expireHours / 24)} 天后过期`
@@ -524,7 +549,12 @@ async function loadOlderMessages() {
   const prevScrollTop = messagesList.scrollTop;
 
   try {
-    const data = await fetchMessages({ before: oldestTimestamp, limit: PAGE_SIZE });
+    const data = await fetchMessages({
+      before: oldestTimestamp,
+      limit: PAGE_SIZE,
+      keyword: state.searchKeyword,
+      category: state.searchCategory
+    });
     const olderMessages = data.messages || [];
     state.hasMoreMessages = Boolean(data.hasMore);
 
@@ -533,6 +563,7 @@ async function loadOlderMessages() {
       const fragment = document.createDocumentFragment();
       olderMessages.forEach((msg) => {
         fragment.appendChild(createMessageElement(msg, {
+          searchKeyword: state.searchKeyword,
           onOpenTextViewer: (m) => textViewerModal.open(m),
           onOpenImageViewer: (m) => imageViewerModal.open(m),
           onOpenRemark: (m) => remarkModal.open(m),
@@ -936,6 +967,168 @@ if (dropZone) {
   });
 }
 
+// ========== 搜索与分类浏览控制器 ==========
+let searchDebounceTimer = null;
+
+function hasActiveFilter() {
+  const hasKw = Boolean(state.searchKeyword && state.searchKeyword.trim());
+  const hasCat = Boolean(state.searchCategory && state.searchCategory !== 'all');
+  return hasKw || hasCat;
+}
+
+function updateSearchResultCount() {
+  if (!searchResultCount) return;
+  if (!hasActiveFilter()) {
+    searchResultCount.classList.add('hidden');
+    return;
+  }
+  const count = state.searchTotal || 0;
+  searchResultCount.textContent = `共 ${count} 条`;
+  searchResultCount.classList.remove('hidden');
+}
+
+function matchesCurrentSearch(msg) {
+  if (!hasActiveFilter()) return true;
+  const category = state.searchCategory || 'all';
+  const keyword = (state.searchKeyword || '').trim().toLowerCase();
+
+  // 1. 分类匹配
+  if (category !== 'all') {
+    if (category === 'text' && msg.type !== 'text') return false;
+    if (category === 'image' && msg.type !== 'image') return false;
+    const isVideo = msg.type === 'file' && msg.content && (
+      (typeof msg.content.mimeType === 'string' && msg.content.mimeType.toLowerCase().startsWith('video/')) ||
+      /\.(mp4|mov|webm|mkv|avi|m4v|flv|wmv)$/i.test(msg.content.name || '')
+    );
+    if (category === 'video' && !isVideo) return false;
+    if (category === 'file' && (msg.type !== 'file' || isVideo)) return false;
+  }
+
+  // 2. 关键词匹配
+  if (keyword) {
+    if (msg.remark && typeof msg.remark === 'string' && msg.remark.toLowerCase().includes(keyword)) return true;
+    if (msg.type === 'text' && typeof msg.content === 'string' && msg.content.toLowerCase().includes(keyword)) return true;
+    if (msg.type === 'file' && msg.content && typeof msg.content.name === 'string' && msg.content.name.toLowerCase().includes(keyword)) return true;
+    return false;
+  }
+
+  return true;
+}
+
+function updateSearchPanelExpansion() {
+  if (!searchBarPanel) return;
+  if (hasActiveFilter() || (searchInput && document.activeElement === searchInput)) {
+    searchBarPanel.classList.add('is-expanded');
+  } else {
+    searchBarPanel.classList.remove('is-expanded');
+  }
+}
+
+function clearSearch() {
+  if (searchInput) {
+    searchInput.value = '';
+    searchInput.blur();
+  }
+  if (searchClearBtn) {
+    searchClearBtn.classList.add('hidden');
+  }
+  state.searchKeyword = '';
+  state.searchCategory = 'all';
+  state.isSearchActive = false;
+
+  if (searchBarPanel) {
+    searchBarPanel.classList.remove('is-expanded');
+  }
+
+  if (searchPills) {
+    searchPills.forEach((p) => p.classList.toggle('active', p.dataset.category === 'all'));
+  }
+  if (searchResultCount) {
+    searchResultCount.classList.add('hidden');
+  }
+
+  if (state.currentTab === 'messages') {
+    loadInitialMessages();
+  } else {
+    loadFavorites();
+  }
+}
+
+function executeSearch() {
+  const keyword = searchInput ? searchInput.value.trim() : '';
+  state.searchKeyword = keyword;
+  state.isSearchActive = hasActiveFilter();
+
+  if (searchClearBtn) {
+    searchClearBtn.classList.toggle('hidden', !state.isSearchActive);
+  }
+  updateSearchPanelExpansion();
+
+  if (state.currentTab === 'messages') {
+    loadInitialMessages();
+  } else {
+    loadFavorites();
+  }
+}
+
+function handleSearchInput() {
+  const keyword = searchInput ? searchInput.value.trim() : '';
+  state.searchKeyword = keyword;
+  state.isSearchActive = hasActiveFilter();
+
+  if (searchClearBtn) {
+    searchClearBtn.classList.toggle('hidden', !state.isSearchActive);
+  }
+  updateSearchPanelExpansion();
+
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => {
+    executeSearch();
+  }, 300);
+}
+
+if (searchInput) {
+  searchInput.addEventListener('focus', () => {
+    if (searchBarPanel) searchBarPanel.classList.add('is-expanded');
+  });
+
+  searchInput.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (!hasActiveFilter() && (!searchBarPanel || !searchBarPanel.contains(document.activeElement))) {
+        if (searchBarPanel) searchBarPanel.classList.remove('is-expanded');
+      }
+    }, 200);
+  });
+
+  searchInput.addEventListener('input', handleSearchInput);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      executeSearch();
+    } else if (e.key === 'Escape') {
+      clearSearch();
+    }
+  });
+}
+
+if (searchClearBtn) {
+  searchClearBtn.addEventListener('click', () => {
+    clearSearch();
+  });
+}
+
+if (searchPills) {
+  searchPills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      const category = pill.dataset.category || 'all';
+      if (state.searchCategory === category) return;
+      state.searchCategory = category;
+      searchPills.forEach((p) => p.classList.toggle('active', p.dataset.category === category));
+      executeSearch();
+    });
+  });
+}
+
 // ========== 标签页切换 ==========
 function switchTab(tabName) {
   state.currentTab = tabName;
@@ -945,9 +1138,17 @@ function switchTab(tabName) {
   document.querySelectorAll('.tab-panel').forEach((panel) => {
     panel.classList.toggle('active', panel.dataset.panel === tabName);
   });
-  if (tabName === 'favorites') {
-    renderFavorites();
-    loadFavorites();
+  if (state.isSearchActive) {
+    if (tabName === 'messages') {
+      loadInitialMessages();
+    } else if (tabName === 'favorites') {
+      loadFavorites();
+    }
+  } else {
+    if (tabName === 'favorites') {
+      renderFavorites();
+      loadFavorites();
+    }
   }
 }
 
@@ -1007,6 +1208,10 @@ function logout(showMessage = true) {
   if (expireCheckInterval) {
     clearInterval(expireCheckInterval);
     expireCheckInterval = null;
+  }
+
+  if (state.isSearchActive) {
+    clearSearch();
   }
 
   state.isAuthenticated = false;
@@ -1107,6 +1312,14 @@ initSocketConnection({
   onNewMessage: (msg) => {
     const exists = state.messages.some((m) => m.id === msg.id);
     if (!exists) {
+      if (state.isSearchActive) {
+        if (!matchesCurrentSearch(msg)) {
+          showToast('收到新消息（不符合当前筛选条件）');
+          return;
+        }
+        state.searchTotal = (state.searchTotal || 0) + 1;
+        updateSearchResultCount();
+      }
       state.messages.push(msg);
       appendSingleMessage(msg);
       showToast('收到新消息');

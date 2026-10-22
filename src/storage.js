@@ -229,20 +229,91 @@ function schedulePersist(userId = null) {
   });
 }
 
+// 判断消息是否为视频消息
+function isVideoMessage(item) {
+  if (!item || item.type !== 'file' || !item.content) return false;
+  const content = item.content;
+  if (typeof content.mimeType === 'string' && content.mimeType.toLowerCase().startsWith('video/')) {
+    return true;
+  }
+  const name = typeof content.name === 'string' ? content.name : '';
+  return /\.(mp4|mov|webm|mkv|avi|m4v|flv|wmv)$/i.test(name);
+}
+
+// 检查单条消息是否符合分类要求
+function matchesCategory(item, category) {
+  if (!category || category === 'all') return true;
+  if (category === 'text') {
+    return item.type === 'text';
+  }
+  if (category === 'image') {
+    return item.type === 'image';
+  }
+  if (category === 'video') {
+    return isVideoMessage(item);
+  }
+  if (category === 'file') {
+    return item.type === 'file' && !isVideoMessage(item);
+  }
+  return true;
+}
+
+// 检查单条消息是否符合关键词搜索
+function matchesKeyword(item, keyword) {
+  if (!keyword) return true;
+  const lowerKeyword = keyword.toLowerCase();
+
+  // 1. 匹配备注 remark
+  if (item.remark && typeof item.remark === 'string' && item.remark.toLowerCase().includes(lowerKeyword)) {
+    return true;
+  }
+
+  // 2. 匹配文本内容
+  if (item.type === 'text') {
+    return typeof item.content === 'string' && item.content.toLowerCase().includes(lowerKeyword);
+  }
+
+  // 3. 匹配文件/视频的文件名
+  if (item.type === 'file' && item.content && typeof item.content.name === 'string') {
+    return item.content.name.toLowerCase().includes(lowerKeyword);
+  }
+
+  return false;
+}
+
+// 统一过滤函数
+function filterMessages(messages, { keyword, category } = {}) {
+  const normKeyword = typeof keyword === 'string' ? keyword.trim() : '';
+  const normCategory = typeof category === 'string' ? category.trim() : 'all';
+
+  if (!normKeyword && (!normCategory || normCategory === 'all')) {
+    return messages;
+  }
+
+  return messages.filter((item) => {
+    return matchesCategory(item, normCategory) && matchesKeyword(item, normKeyword);
+  });
+}
+
 // 获取消息分页
-function getMessagesPage({ before, limit, userId = null }) {
+function getMessagesPage({ before, limit, userId = null, keyword = null, category = null }) {
   const state = getUserState(userId);
   const pageLimit = clampPageSize(limit);
+  
+  // 1. 先进行分类和关键词过滤
+  const filteredMessages = filterMessages(state.messages, { keyword, category });
+
+  // 2. 沿用基于时间戳的游标分页
   const source = Number.isFinite(before)
-    ? state.messages.filter((item) => item.timestamp < before)
-    : state.messages;
+    ? filteredMessages.filter((item) => item.timestamp < before)
+    : filteredMessages;
   const start = Math.max(source.length - pageLimit, 0);
   const page = source.slice(start);
 
   return {
     messages: page,
     hasMore: start > 0,
-    total: state.messages.length
+    total: filteredMessages.length
   };
 }
 
@@ -270,5 +341,11 @@ module.exports = {
   schedulePersist,
 
   // 分页函数
-  getMessagesPage
+  getMessagesPage,
+
+  // 搜索与过滤工具函数
+  filterMessages,
+  isVideoMessage,
+  matchesCategory,
+  matchesKeyword
 };

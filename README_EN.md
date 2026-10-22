@@ -6,27 +6,30 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
 
 ## Features
 
-- Default password-free public access, with optional password protection
-- **Password login supports selecting session validity duration (10 minutes to 30 days), with automatic client-side cleanup and logout upon expiration (v1.6.1+)**
-- **Multi-user mode, with data isolated by password (v1.4.0+)**
-- **PWA (Progressive Web App) support for offline asset caching, installable directly to home screen like a native app (v1.6.0+)**
-- Chatbox-style message display, supporting infinite scroll loading of historical messages
-- Real-time synchronization via WebSocket, with automatic message synchronization upon reconnection
-- Text message transmission and one-click copy, **supporting markdown inline code/code block and hyperlink intelligent highlight rendering with regex (v1.6.0+)**
-- Image pasting/uploading, supporting adaptive thumbnails and copy original image (dynamic requests)
-- File uploading/downloading, **supporting inline multimedia playback previews for audio and video messages directly on the page (v1.6.0+)**
-- **Deep system clipboard integration: Double-click paste button to "paste & send", automatically focuses and loads clipboard when pasting via shortcuts while the page is inactive (v1.6.0+)**
-- **Message sharing feature, generating shareable links with passwords and expiration times (v1.5.0+)**
-- **Message remark feature, allowing users to add and edit contextual notes for text, image, and file messages with real-time multi-device sync (v1.6.7+)**
-- **Local image caching via IndexedDB for low-bandwidth environments, with real-time sync deletion, TTL and LRU quota cleanup (v1.6.9+)**
-- **Native ES Modules Architecture: Core component decoupling with clean data and network layer separation (v1.7.0+)**
-- **Comprehensive Security & Incremental Persistence: Strict attachment access control, XSS defense, timing/brute-force protection, and dirty-user incremental disk write (v1.7.0+)**
-- Server-side message persistence, preventing data loss upon service restarts
-- Message deletion and one-click clear, clearing associated files simultaneously
-- Automatic expiration cleanup, automatically deleting outdated data
-- Scheduled cleaning of orphan files on disk, automatically removing empty date directories
-- **Integrated API request rate limiting defense mechanism, with password brute-force protection (v1.5.9+)**
-- **Security hardening: Completely blocks multi-user mode privilege escalation (IDOR), unauthorized file uploads, and broadcast eavesdropping risks (v1.5.9+)**
+- **Multi-Device Real-Time Sync**
+  - Instant cross-device synchronization powered by WebSocket, with auto-reconnection and missed-message backfill
+  - Chatbox-style message cards with smooth infinite scroll history loading
+  - Reliable server-side persistence, ensuring zero data loss upon server restarts
+- **Rich Media & Interactive Experience**
+  - **Text**: One-click quick copy, markdown inline code/code block rendering, and auto-hyperlink detection
+  - **Images**: Direct paste from clipboard screenshot or multi-image upload, adaptive thumbnails with dynamic original image fetching, and auto-transcoding for HEIC
+  - **Audio, Video & Files**: Direct in-card inline playback preview for audio/video media, and easy upload/download for any file format
+  - **Message Remarks**: Add and edit multi-line contextual remarks for any message, synced in real-time across devices
+  - **Deep Clipboard Integration**: Shortcut auto-capture when switching windows, and double-click paste button to "paste and send" instantly
+- **Global Search & Filter**
+  - Instant fuzzy search across text content, filenames, and remarks with luminous keyword highlighting
+  - Category pill filters (All / Text / Image / Video / File) with combined keyword search support
+- **Secure Sharing**
+  - Generate standalone shareable links for any message with custom passwords and expiration durations
+  - Dedicated "My Shares" panel to view, copy, or revoke active share links anytime
+- **User Isolation & Access Control**
+  - **Multiple Modes**: Support for public password-free mode, single-user password mode, and multi-user isolated mode
+  - **Multi-User Isolation**: Different passwords map directly to independent workspaces with complete data and file isolation
+  - **Session Expiration Control**: Selectable session validity durations (10 minutes to 30 days) with auto-logout upon expiry
+- **Optimized Experience & Maintenance**
+  - **PWA Ready**: Installable to desktop or mobile home screens for a fast, native-like app experience
+  - **Local Fast-Open Cache**: IndexedDB smart caching for images, providing instant loading under weak networks with automatic LRU eviction
+  - **Automated Lifecycle**: Auto-cleanup of expired messages and scheduled orphan file removal, with support for single message deletion and one-click clear all
 
 ## Quick Start
 
@@ -51,7 +54,7 @@ docker run -d \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 
-# Multi-user mode (Data isolated by password) **v1.4.0+**
+# Multi-user mode (Data isolated by password)
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3 \
@@ -72,7 +75,7 @@ services:
     environment:
       # Single-user mode
       - ACCESS_PASSWORD=your_password
-      # Multi-user mode **v1.4.0+** (uncomment to use)
+      # Multi-user mode (uncomment to use)
       # - ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
       # - MIGRATE_DEFAULT_USER=user1  # Migrate single-user data to a specified user
       - EXPIRE_HOURS=168
@@ -101,14 +104,14 @@ npm start
 |------|------|--------|
 | `PORT` | Service port | `3000` |
 | `ACCESS_PASSWORD` | Single-user mode access password (leave empty for password-free mode) | Empty (No password) |
-| `ACCESS_PASSWORDS` | Multi-user mode password mapping (Format: `userId:password,userId:password`) **v1.4.0+** | Empty |
-| `MIGRATE_DEFAULT_USER` | Migrate single-user data to a specified user (only on multi-user mode first run) **v1.4.0+** | Empty |
+| `ACCESS_PASSWORDS` | Multi-user mode password mapping (Format: `userId:password,userId:password`) | Empty |
+| `MIGRATE_DEFAULT_USER` | Migrate single-user data to a specified user (only on multi-user mode first run) | Empty |
 | `EXPIRE_HOURS` | Data expiration time (hours) | `168` (7 days) |
 | `MESSAGE_PAGE_SIZE` | Messages loaded per page | `30` |
 | `SOCKET_SYNC_LIMIT` | Socket initial sync limit | `20` |
 | `STORAGE_ROOT` | Data root directory | `./data` |
 | `FILE_CLEANUP_INTERVAL_MINUTES` | Interval for cleaning up orphan files (minutes) | `30` |
-| `SHARE_MAX_EXPIRE_HOURS` | Maximum expiration time for shared links (hours) **v1.5.0+** | `168` (7 days) |
+| `SHARE_MAX_EXPIRE_HOURS` | Maximum expiration time for shared links (hours) | `168` (7 days) |
 
 ## Run Modes
 
@@ -116,7 +119,7 @@ npm start
 
 Set a password using the `ACCESS_PASSWORD` environment variable. Data is stored in `data/messages.json` and `data/uploads/`.
 
-### Multi-user Mode **v1.4.0+**
+### Multi-user Mode
 
 Set user password mapping using the `ACCESS_PASSWORDS` environment variable:
 
@@ -130,7 +133,7 @@ Each user's data is stored independently in:
 
 After users enter their password, the system automatically identifies the user, and data is completely isolated.
 
-### Migration from Single-user to Multi-user **v1.4.0+**
+### Migration from Single-user to Multi-user
 
 If you previously used single-user mode and are switching to multi-user mode:
 
@@ -151,18 +154,15 @@ If `MIGRATE_DEFAULT_USER` is not set, single-user data will remain on disk but w
 
 ## Usage Instructions
 
-1. Open the page (accesses directly in password-free mode, prompts for password if enabled).
-2. Input text in the input box, press Enter or click "Send".
-3. Click the "Paste" button to paste text from clipboard into the input box.
-4. Click the "Paste Image" button or paste an image directly into the input box.
-5. Click the attachment button 📎 to upload images or files.
-6. Image messages support "Copy Thumbnail" and "Copy Original Image" (fetched dynamically from the server).
-7. File messages support downloading. Click "Download File" to download.
-8. Hover over a message card to reveal action buttons to delete a single message.
-9. Click the "Share" button to generate a shareable link, supporting access password and expiration settings **v1.5.0+**.
-10. Click "My Shares" to view, copy, or cancel created shares **v1.5.0+**.
-11. Click "Clear" to clear all messages with one click.
-12. Under password mode, click "Logout" to clear the local password cache and return to the login page.
+1. **Access / Login**: Open the page (instant entry in password-free mode; choose session expiration duration in password mode).
+2. **Send Text**: Type in the input box, press Enter or click "Send"; supports markdown code and link highlighting.
+3. **Clipboard Interaction**: Click "Paste" to load text, double-click "Paste" to send immediately; press `Ctrl/Cmd + V` on an inactive window to auto-focus and load clipboard contents.
+4. **Send Images & Files**: Click "Paste Image" or paste screenshots directly; click the attachment 📎 icon to upload images, audio, video, or files.
+5. **Media Actions**: Click images to preview full size, copy thumbnails or original images with one click; audio/video can be played inline within cards.
+6. **Search & Filter**: Type keywords in the top search bar for instant search, or click category pills (Text/Image/Video/File) to browse.
+7. **Message Remarks**: Click "Remark" on a card to add or edit notes with instant multi-device sync.
+8. **Share Messages**: Click "Share" to create a link with optional passwords and expiration; manage them in "My Shares".
+9. **Manage & Logout**: Hover over message cards to delete; click "Clear" to clear all history; click "Logout" to sign out and clear saved credentials.
 
 ## Risk Warning for Sharing Feature
 

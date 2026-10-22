@@ -47,11 +47,13 @@ export async function login(password) {
   return data;
 }
 
-// 分页获取消息列表
-export async function fetchMessages({ before, limit } = {}) {
+// 分页获取消息列表（支持关键词搜索与分类筛选）
+export async function fetchMessages({ before, limit, keyword, category } = {}) {
   const params = new URLSearchParams();
   if (before) params.set('before', before);
   if (limit) params.set('limit', limit);
+  if (keyword) params.set('keyword', keyword);
+  if (category && category !== 'all') params.set('category', category);
   if (state.currentMode === 'multi' && state.userId) {
     params.set('userId', state.userId);
   }
@@ -59,6 +61,22 @@ export async function fetchMessages({ before, limit } = {}) {
   const response = await authFetch(`/api/messages?${params.toString()}`);
   if (!response.ok) {
     throw new Error(`获取消息列表失败: ${response.status}`);
+  }
+  return response.json();
+}
+
+// 获取收藏列表（支持关键词搜索与分类筛选）
+export async function fetchFavorites({ keyword, category } = {}) {
+  const params = new URLSearchParams();
+  if (keyword) params.set('keyword', keyword);
+  if (category && category !== 'all') params.set('category', category);
+  if (state.currentMode === 'multi' && state.userId) {
+    params.set('userId', state.userId);
+  }
+
+  const response = await authFetch(`/api/favorites?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`获取收藏列表失败: ${response.status}`);
   }
   return response.json();
 }

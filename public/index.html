@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.7.0">
+  <link rel="stylesheet" href="style.css?v=1.7.3">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1a1a1a">
   <link rel="apple-touch-icon" href="/favicon.svg">
@@ -48,6 +48,27 @@
       <div class="tabs">
         <button class="tab active" data-tab="messages">消息</button>
         <button class="tab" data-tab="favorites">收藏</button>
+      </div>
+
+      <div id="search-bar-panel" class="search-bar-panel">
+        <div class="search-input-wrapper">
+          <span class="search-input-icon">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </span>
+          <input type="text" id="search-input" class="search-input" placeholder="搜索消息内容、文件名称或备注..." autocomplete="off">
+          <button type="button" id="search-clear-btn" class="search-clear-btn hidden" title="清空搜索与筛选">✕</button>
+        </div>
+        <div class="search-pills-row" id="search-pills-row">
+          <button type="button" class="search-pill active" data-category="all">全部</button>
+          <button type="button" class="search-pill" data-category="text">📝 文本</button>
+          <button type="button" class="search-pill" data-category="image">🖼️ 图片</button>
+          <button type="button" class="search-pill" data-category="video">🎬 视频</button>
+          <button type="button" class="search-pill" data-category="file">📎 文件</button>
+          <span id="search-result-count" class="search-result-count hidden">共 0 条</span>
+        </div>
       </div>
 
       <div class="tab-panel active" data-panel="messages">
@@ -237,9 +258,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.7.0"></script>
-  <script src="cache.js?v=1.7.0"></script>
-  <script type="module" src="app.js?v=1.7.0"></script>
+  <script src="utils.js?v=1.7.3"></script>
+  <script src="cache.js?v=1.7.3"></script>
+  <script type="module" src="app.js?v=1.7.3"></script>
 </body>
 
 </html>

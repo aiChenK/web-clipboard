@@ -8,6 +8,7 @@ import { copyTextToClipboard, copyImageToClipboard, copyOriginalImageWithFallbac
 
 export function createMessageElement(msg, {
   isFavoritesView = false,
+  searchKeyword = '',
   onOpenTextViewer,
   onOpenImageViewer,
   onOpenRemark,
@@ -66,7 +67,7 @@ export function createMessageElement(msg, {
   if (msg.type === 'text') {
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content text';
-    contentEl.innerHTML = utils ? utils.renderSmartText(msg.content) : msg.content;
+    contentEl.innerHTML = utils ? utils.renderSmartText(msg.content, searchKeyword) : msg.content;
 
     const lines = (msg.content || '').split('\n').length;
     const isLongByContent = lines > 6 || (msg.content && msg.content.length > 220);
@@ -199,7 +200,11 @@ export function createMessageElement(msg, {
     contentEl.className = 'message-content file';
     const nameEl = document.createElement('div');
     nameEl.className = 'file-name';
-    nameEl.textContent = fileData.name;
+    if (utils && searchKeyword) {
+      nameEl.innerHTML = utils.highlightText(fileData.name, searchKeyword);
+    } else {
+      nameEl.textContent = fileData.name;
+    }
 
     const metaEl = document.createElement('div');
     metaEl.className = 'file-meta';
@@ -271,7 +276,12 @@ export function createMessageElement(msg, {
   remarkBoxEl.innerHTML = `
     <span class="message-remark-label">📝 备注：</span><span class="message-remark-text"></span>
   `;
-  remarkBoxEl.querySelector('.message-remark-text').textContent = msg.remark || '';
+  const remarkTextEl = remarkBoxEl.querySelector('.message-remark-text');
+  if (utils && searchKeyword) {
+    remarkTextEl.innerHTML = utils.highlightText(msg.remark || '', searchKeyword);
+  } else {
+    remarkTextEl.textContent = msg.remark || '';
+  }
   remarkBoxEl.addEventListener('click', (e) => {
     e.stopPropagation();
     if (onOpenRemark) onOpenRemark(msg);
