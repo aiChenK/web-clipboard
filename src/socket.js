@@ -1,6 +1,52 @@
 const { MULTI_USER_MODE, ACCESS_PASSWORD, SOCKET_SYNC_LIMIT, userPasswordMap } = require('./config');
 const { getMessagesPage } = require('./storage');
 const { toPublicMessage } = require('./message');
+const { timingSafeCompare } = require('./utils');
+
+// 握手失败限流：同来源 1 分钟内最多 10 次失败（与 HTTP 侧 authLimiter 对齐）
+const HANDSHAKE_FAIL_LIMIT = 10;
+const HANDSHAKE_FAIL_WINDOW_MS = 60 * 1000;
+const handshakeFailures = new Map();
+
+function getHandshakeKey(socket) {
+  const forwarded = socket.handshake.headers && socket.handshake.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return socket.handshake.address || 'unknown';
+}
+
+function isHandshakeBlocked(key) {
+  const entry = handshakeFailures.get(key);
+  if (!entry) return false;
+  if (Date.now() - entry.windowStart > HANDSHAKE_FAIL_WINDOW_MS) {
+    handshakeFailures.delete(key);
+    return false;
+  }
+  return entry.count >= HANDSHAKE_FAIL_LIMIT;
+}
+
+function recordHandshakeFailure(key) {
+  const now = Date.now();
+  const entry = handshakeFailures.get(key);
+  if (!entry || now - entry.windowStart > HANDSHAKE_FAIL_WINDOW_MS) {
+    handshakeFailures.set(key, { windowStart: now, count: 1 });
+    return;
+  }
+  entry.count += 1;
+}
+
+// 多用户模式下以常量时间遍历比对全部口令，防止时序侧信道
+function matchMultiUserPassword(password) {
+  let matchedUserId = null;
+  for (const [validPassword, mappedUser] of userPasswordMap.entries()) {
+    if (timingSafeCompare(password, validPassword)) {
+      matchedUserId = mappedUser;
+      break;
+    }
+  }
+  return matchedUserId;
+}
 
 // Socket.io 广播辅助对象
 const socketHelper = {
@@ -64,30 +110,41 @@ function setupSocket(io) {
   // 连接建立时的鉴权拦截器
   io.use((socket, next) => {
     const { password, userId } = socket.handshake.auth || {};
+    const sourceKey = getHandshakeKey(socket);
+
+    if (isHandshakeBlocked(sourceKey)) {
+      return next(new Error('Authentication error: too many attempts, please retry later'));
+    }
 
     if (MULTI_USER_MODE) {
       if (!password) {
+        recordHandshakeFailure(sourceKey);
         return next(new Error('Authentication error: password required'));
       }
-      const matchedUserId = userPasswordMap.get(password);
+      const matchedUserId = matchMultiUserPassword(password);
       if (!matchedUserId) {
+        recordHandshakeFailure(sourceKey);
         return next(new Error('Authentication error: invalid password'));
       }
       if (userId && matchedUserId !== userId) {
+        recordHandshakeFailure(sourceKey);
         return next(new Error('Authentication error: userId mismatch'));
       }
       // 将认证通过的 userId 绑定至 socket 实例上
       socket.userId = matchedUserId;
+      handshakeFailures.delete(sourceKey);
       return next();
     }
 
     if (ACCESS_PASSWORD) {
-      if (password !== ACCESS_PASSWORD) {
+      if (!timingSafeCompare(password, ACCESS_PASSWORD)) {
+        recordHandshakeFailure(sourceKey);
         return next(new Error('Authentication error: invalid password'));
       }
     }
 
     socket.userId = null;
+    handshakeFailures.delete(sourceKey);
     return next();
   });
 

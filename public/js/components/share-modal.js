@@ -2,7 +2,7 @@
  * 分享功能组件模块 (创建分享链接与分享列表管理)
  */
 
-import { createShare, authFetch } from '../api.js';
+import { createShare, authFetch, fetchShareConfig } from '../api.js';
 import { state } from '../state.js';
 
 export class ShareModal {
@@ -21,6 +21,19 @@ export class ShareModal {
 
     this.currentMessage = null;
     this.initEvents();
+
+    // 按服务端 SHARE_MAX_EXPIRE_HOURS 收敛可选过期时长，避免展示必然被钳制的选项
+    if (this.expiresSelect) {
+      fetchShareConfig()
+        .then((cfg) => {
+          const maxHours = Number(cfg && cfg.maxExpiresHours);
+          if (!Number.isFinite(maxHours) || maxHours <= 0) return;
+          Array.from(this.expiresSelect.options).forEach((opt) => {
+            if (Number(opt.value) > maxHours) opt.remove();
+          });
+        })
+        .catch(() => {});
+    }
   }
 
   initEvents() {
@@ -189,7 +202,11 @@ export class ShareListModal {
 
       this.render(data.shares || []);
     } catch (err) {
-      this.container.innerHTML = `<div class="share-list-error">${err.message}</div>`;
+      const errorEl = document.createElement('div');
+      errorEl.className = 'share-list-error';
+      errorEl.textContent = err.message || '获取分享列表失败';
+      this.container.innerHTML = '';
+      this.container.appendChild(errorEl);
     }
   }
 

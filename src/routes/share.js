@@ -56,7 +56,7 @@ router.post('/', requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error('创建分享失败:', error);
-    return res.status(400).json({ error: error.message || '创建分享失败' });
+    return res.status(400).json({ error: '创建分享失败' });
   }
 });
 
@@ -95,10 +95,11 @@ router.post('/:shareId/verify', shareVerifyLimiter, async (req, res) => {
   }
 });
 
-// 获取分享消息内容
-router.get('/:shareId/content', async (req, res) => {
+// 获取分享消息内容（挂 shareVerifyLimiter：密码校验内联于本端点，需与 /verify 同等防爆破强度）
+router.get('/:shareId/content', shareVerifyLimiter, async (req, res) => {
   const { shareId } = req.params;
-  const { password } = req.query;
+  // 优先取 header（避免密码进入 URL 与访问日志），保留 query 通道兼容旧客户端
+  const password = req.headers['x-share-password'] || req.query.password;
 
   try {
     // 如果有密码保护，先验证密码
@@ -127,9 +128,9 @@ router.get('/:shareId/content', async (req, res) => {
 });
 
 // 安全受控获取分享图片（供未登录但持有有效分享权限的访客访问）
-router.get('/:shareId/image', async (req, res) => {
+router.get('/:shareId/image', shareVerifyLimiter, async (req, res) => {
   const { shareId } = req.params;
-  const { password } = req.query;
+  const password = req.headers['x-share-password'] || req.query.password;
 
   try {
     const share = await loadShare(shareId);
@@ -173,9 +174,9 @@ router.get('/:shareId/image', async (req, res) => {
 });
 
 // 安全受控获取分享文件（供未登录但持有有效分享权限的访客下载）
-router.get('/:shareId/file', async (req, res) => {
+router.get('/:shareId/file', shareVerifyLimiter, async (req, res) => {
   const { shareId } = req.params;
-  const { password } = req.query;
+  const password = req.headers['x-share-password'] || req.query.password;
 
   try {
     const share = await loadShare(shareId);

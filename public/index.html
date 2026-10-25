@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.7.3">
+  <link rel="stylesheet" href="style.css?v=1.7.1">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1a1a1a">
   <link rel="apple-touch-icon" href="/favicon.svg">
@@ -83,7 +83,7 @@
               </div>
             </div>
             <div class="input-row">
-              <textarea id="text-input" placeholder="输入文字消息..." rows="1"></textarea>
+              <textarea id="text-input" placeholder="输入文字消息..." rows="1" maxlength="100000"></textarea>
               <button id="send-text" class="btn btn-primary">发送</button>
               <button id="paste-text" class="btn btn-secondary" title="从剪贴板粘贴">📋</button>
               <label class="btn btn-secondary upload-btn" title="发送图片">
@@ -258,9 +258,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.7.3"></script>
-  <script src="cache.js?v=1.7.3"></script>
-  <script type="module" src="app.js?v=1.7.3"></script>
+  <script src="utils.js?v=1.7.1"></script>
+  <script src="cache.js?v=1.7.1"></script>
+  <script type="module" src="app.js?v=1.7.1"></script>
 </body>
 
 </html>

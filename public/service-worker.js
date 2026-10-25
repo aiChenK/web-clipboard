@@ -1,4 +1,5 @@
-const CACHE_NAME = 'web-clipboard-v1.7.0';
+// 缓存版本号与 package.json 发布版本及 index.html 静态资源 ?v= 同步更新
+const CACHE_NAME = 'web-clipboard-v1.7.1';
 const ASSETS = [
   '/',
   '/index.html',
@@ -50,7 +51,10 @@ self.addEventListener('activate', (e) => {
 
 // 拦截 fetch 请求并应用 Stale-While-Revalidate 缓存策略
 self.addEventListener('fetch', (e) => {
+  // 仅处理同源 GET 请求
+  if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
 
   // 安全排除：API、大文件上传目录以及 Socket.IO 连接不进行 Service Worker 拦截缓存
   if (
@@ -62,7 +66,8 @@ self.addEventListener('fetch', (e) => {
   }
 
   e.respondWith(
-    caches.match(e.request).then((cachedResponse) => {
+    // ignoreSearch：预缓存为无版本号 URL，运行时请求带 ?v= 查询参数，忽略查询串才能命中
+    caches.match(e.request, { ignoreSearch: true }).then((cachedResponse) => {
       if (cachedResponse) {
         // 静态资产：缓存优先返回，同时后台默默 fetch 更新最新版本缓存
         fetch(e.request).then((networkResponse) => {
@@ -72,7 +77,14 @@ self.addEventListener('fetch', (e) => {
         }).catch(() => { });
         return cachedResponse;
       }
-      return fetch(e.request);
+      // 未命中：走网络并回写运行时缓存（仅缓存同源成功响应）
+      return fetch(e.request).then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200) {
+          const clone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+        }
+        return networkResponse;
+      });
     })
   );
 });

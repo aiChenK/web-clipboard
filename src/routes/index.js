@@ -9,11 +9,23 @@ const favoritesRoutes = require('./favorites');
 const shareRoutes = require('./share');
 const { apiLimiter } = require('../middleware/rateLimit');
 
+// 上传静态文件响应加固：nosniff + 风险类型强制下载
+// （阻断 .html/.svg 等同源导航执行；<img>/<video> 嵌入渲染不受 Content-Disposition 影响）
+const UPLOAD_RISKY_EXTENSIONS = new Set(['.html', '.htm', '.svg', '.xhtml', '.xml']);
+
+function uploadStaticHardening(req, res, next) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (UPLOAD_RISKY_EXTENSIONS.has(path.extname(req.path || '').toLowerCase())) {
+    res.setHeader('Content-Disposition', 'attachment');
+  }
+  next();
+}
+
 // 设置静态文件路由（上传文件，增加权限控制与租户隔离）
 function setupUploadRoutes(app) {
   if (MULTI_USER_MODE) {
     // 多用户模式：必须认证且仅允许访问属于当前登录用户的数据
-    app.use('/uploads/:userId', requireAuth, (req, res, next) => {
+    app.use('/uploads/:userId', requireAuth, uploadStaticHardening, (req, res, next) => {
       const targetUserId = req.params.userId;
       if (req.userId !== targetUserId) {
         return res.status(403).json({ error: '禁止访问：无权访问其他用户的私密附件' });
@@ -24,9 +36,9 @@ function setupUploadRoutes(app) {
   } else {
     // 单用户模式：若配置了访问密码，必须通过密码鉴权方可访问上传目录
     if (ACCESS_PASSWORD) {
-      app.use('/uploads', requireAuth, express.static(UPLOAD_ROOT));
+      app.use('/uploads', requireAuth, uploadStaticHardening, express.static(UPLOAD_ROOT));
     } else {
-      app.use('/uploads', express.static(UPLOAD_ROOT));
+      app.use('/uploads', uploadStaticHardening, express.static(UPLOAD_ROOT));
     }
   }
 }
@@ -60,8 +72,8 @@ function setupRoutes(app) {
   setupUploadRoutes(app);
 
   // JSON 解析中间件（收缩至合理的 10MB 大小限制，防止畸形大 JSON DoS）
+  // 客户端仅使用 JSON 与 multipart/form-data，无需 urlencoded 解析器
   app.use(express.json({ limit: '10mb' }));
-  app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
   // API 路由
   setupApiRoutes(app);

@@ -36,9 +36,9 @@ function toDateFolder(timestamp = Date.now()) {
   return `${year}-${month}-${day}`;
 }
 
-// 创建消息 ID
+// 创建消息/分享 ID（密码学随机，分享 ID 亦作为无密码分享的访问凭证）
 function createMessageId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  return crypto.randomUUID();
 }
 
 // 解码文件名（处理 multipart 上传时的编码问题）

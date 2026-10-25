@@ -109,9 +109,12 @@ npm start
 | `EXPIRE_HOURS` | 数据过期时间（小时） | `168`（7天） |
 | `MESSAGE_PAGE_SIZE` | 分页加载每页数量 | `30` |
 | `SOCKET_SYNC_LIMIT` | Socket 首次同步数量 | `20` |
+| `TEXT_MESSAGE_MAX_LENGTH` | 单条文本消息字符数上限 (v1.7.1+) | `100000` |
 | `STORAGE_ROOT` | 数据根目录 | `./data` |
 | `FILE_CLEANUP_INTERVAL_MINUTES` | 孤儿文件清理间隔（分钟） | `30` |
 | `SHARE_MAX_EXPIRE_HOURS` | 分享链接最大过期时间（小时） | `168`（7天） |
+
+> **安全说明**：多用户模式下 `GET /api/auth/status` 会在未鉴权情况下返回 userId 列表（供登录页展示用户选择），公开部署时请知悉该设计取舍。
 
 ## 运行模式
 

@@ -8,6 +8,8 @@ const MIGRATE_DEFAULT_USER = process.env.MIGRATE_DEFAULT_USER || '';
 const EXPIRE_HOURS = Number.parseInt(process.env.EXPIRE_HOURS, 10) || 168;
 const MESSAGE_PAGE_SIZE = Number.parseInt(process.env.MESSAGE_PAGE_SIZE, 10) || 30;
 const SOCKET_SYNC_LIMIT = Number.parseInt(process.env.SOCKET_SYNC_LIMIT, 10) || 20;
+// 单条文本消息字符数上限（防止超大 JSON 体进入内存与持久化写放大）
+const TEXT_MESSAGE_MAX_LENGTH = Number.parseInt(process.env.TEXT_MESSAGE_MAX_LENGTH, 10) || 100000;
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '..', 'data');
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(STORAGE_ROOT, 'uploads');
@@ -123,6 +125,7 @@ module.exports = {
   EXPIRE_HOURS,
   MESSAGE_PAGE_SIZE,
   SOCKET_SYNC_LIMIT,
+  TEXT_MESSAGE_MAX_LENGTH,
   STORAGE_ROOT,
   UPLOAD_ROOT,
   FILE_CLEANUP_INTERVAL_MINUTES,
@@ -138,7 +141,5 @@ module.exports = {
   MULTI_USER_MODE,
 
   // 多用户配置
-  userPasswordMap,
-  userIdSet,
-  passwordSet
+  userPasswordMap
 };

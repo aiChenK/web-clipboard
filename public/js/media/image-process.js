@@ -67,9 +67,9 @@ export async function compressImageToBlob(fileOrBlob, maxEdge = HD_COMPRESS_MAX_
   }
 }
 
-// 快速生成轻量缩略图
+// 快速生成轻量缩略图（上限边长取 THUMBNAIL_MAX_EDGE，保持与配置一致）
 export async function createThumbnailBlob(fileOrBlob) {
-  return compressImageToBlob(fileOrBlob, 1920, 0.92);
+  return compressImageToBlob(fileOrBlob, THUMBNAIL_MAX_EDGE, 0.92);
 }
 
 // 判定是否为 HEIC/HEIF 格式

@@ -1,10 +1,10 @@
 const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
-const { MULTI_USER_MODE, EXPIRE_HOURS } = require('../config');
+const { MULTI_USER_MODE, EXPIRE_HOURS, TEXT_MESSAGE_MAX_LENGTH } = require('../config');
 const { requireAuth } = require('../middleware/auth');
 const { getUserState, getMessagesPage, schedulePersist } = require('../storage');
-const { getUploadRoot, getUserUploadRoot, getDataFile, SINGLE_USER_DATA_FILE } = require('../storage');
+const { getUploadRoot, getUserUploadRoot } = require('../storage');
 const { uploadMiddleware, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
 const { toPublicMessage, persistImageContent, persistFileContent } = require('../message');
 const { createMessageId, toDateFolder, sanitizeFilename, decodeFilename, extensionFromMime, ensureDir, toPosixPath, normalizeImageIncomingContent, decodeDataUrl } = require('../utils');
@@ -57,13 +57,16 @@ router.post('/', requireAuth, async (req, res) => {
       if (typeof content !== 'string' || !content.trim()) {
         return res.status(400).json({ error: '文本内容不能为空' });
       }
+      if (content.length > TEXT_MESSAGE_MAX_LENGTH) {
+        return res.status(413).json({ error: `文本内容过长，上限 ${TEXT_MESSAGE_MAX_LENGTH} 字符` });
+      }
       message.content = content;
     } else {
       return res.status(400).json({ error: '不支持的消息类型' });
     }
   } catch (error) {
     console.error('处理消息失败:', error);
-    return res.status(400).json({ error: error.message || '消息内容格式错误' });
+    return res.status(400).json({ error: '消息内容格式错误' });
   }
 
   state.messages.push(message);

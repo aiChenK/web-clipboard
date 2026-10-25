@@ -5,7 +5,6 @@
 import {
   PAGE_SIZE,
   TOP_LOAD_THRESHOLD,
-  THUMBNAIL_MAX_EDGE,
   LARGE_IMAGE_THRESHOLD_BYTES,
   STORAGE_KEYS
 } from './js/config.js';
@@ -192,28 +191,20 @@ async function loadImageWithCache(img) {
     img._blobUrl = objectUrl;
     img.src = objectUrl;
   } catch (error) {
-    // 降级使用带凭证的 url 触发原生图片错误事件
-    try {
-      const fallbackUrl = new URL(url, window.location.origin);
-      const savedPassword = localStorage.getItem(STORAGE_KEYS.PASSWORD);
-      const savedUserId = localStorage.getItem(STORAGE_KEYS.USER_ID);
-      if (savedPassword) fallbackUrl.searchParams.set('password', savedPassword);
-      if (savedUserId) fallbackUrl.searchParams.set('userId', savedUserId);
-      img.src = fallbackUrl.toString();
-    } catch {
-      img.src = url;
-    }
+    // 降级为无凭证 URL：仅免密模式可命中；带密码模式下原生 img 无法携带鉴权头，
+    // 凭证不再进入 URL（避免泄漏到浏览器历史与访问日志），交由 error 事件提示
+    img.src = url;
   }
 }
 
-// 释放容器中未被销毁的 ObjectURL 避免内存泄露
+// 释放容器中未被销毁的 ObjectURL 避免内存泄露（覆盖 img / audio / video 的懒加载 blob）
 function revokeBlobUrls(container) {
   if (!container) return;
-  const imgs = container.querySelectorAll('img');
-  imgs.forEach((img) => {
-    if (img._blobUrl) {
-      URL.revokeObjectURL(img._blobUrl);
-      img._blobUrl = null;
+  const media = container.querySelectorAll('img, audio, video');
+  media.forEach((el) => {
+    if (el._blobUrl) {
+      URL.revokeObjectURL(el._blobUrl);
+      el._blobUrl = null;
     }
   });
 }
@@ -987,6 +978,7 @@ function updateSearchResultCount() {
   searchResultCount.classList.remove('hidden');
 }
 
+// 注意：本函数与服务端 src/storage.js 的 isVideoMessage/matchesKeyword 存在等价实现，修改时需同步
 function matchesCurrentSearch(msg) {
   if (!hasActiveFilter()) return true;
   const category = state.searchCategory || 'all';

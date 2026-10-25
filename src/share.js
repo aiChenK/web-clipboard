@@ -1,9 +1,17 @@
 const fs = require('fs/promises');
 const path = require('path');
+const crypto = require('crypto');
 const { SHARE_DIR, SHARE_MAX_EXPIRE_HOURS } = require('./config');
 const { ensureDir, createMessageId, timingSafeCompare } = require('./utils');
 const { getUserState } = require('./storage');
 const { toPublicMessage } = require('./message');
+
+// 分享口令摘要格式标记：64 位 hex 为 sha256 摘要，否则视为遗留明文
+const PASSWORD_HASH_PATTERN = /^[0-9a-f]{64}$/;
+
+function hashSharePassword(password) {
+  return crypto.createHash('sha256').update(String(password), 'utf8').digest('hex');
+}
 
 // 分享数据结构
 // {
@@ -78,7 +86,8 @@ async function createShare({ messageId, userId, password, expiresHours }) {
     shareId,
     messageId,
     userId,
-    password: password || null,
+    // 仅落盘 sha256 摘要，避免磁盘泄漏暴露口令
+    password: password ? hashSharePassword(password) : null,
     expiresAt,
     createdAt: Date.now(),
     createdBy: userId,
@@ -132,9 +141,21 @@ async function verifySharePassword(shareId, password) {
     return { success: true };
   }
 
-  // 恒定时间安全校验密码
-  if (!timingSafeCompare(password, share.password)) {
-    return { success: false, error: '密码错误' };
+  // 恒定时间安全校验密码；存量明文记录验证通过后原地升级为摘要
+  if (PASSWORD_HASH_PATTERN.test(share.password)) {
+    if (!timingSafeCompare(hashSharePassword(password), share.password)) {
+      return { success: false, error: '密码错误' };
+    }
+  } else {
+    if (!timingSafeCompare(password, share.password)) {
+      return { success: false, error: '密码错误' };
+    }
+    share.password = hashSharePassword(share.password);
+    try {
+      await saveShare(share);
+    } catch (error) {
+      console.error('升级分享口令摘要失败:', error);
+    }
   }
 
   return { success: true };

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.7.1（2026-10-25）
+
+- **Security（安全加固）**：
+  - 修复全部 10 个依赖漏洞（含 critical），`npm audit` 归零；
+  - 分享内容/图片/文件端点补齐防爆破限流；WebSocket 握手鉴权改常量时间比较并新增失败限流；
+  - 分享口令改 sha256 摘要落盘（旧明文记录自动升级）；消息/分享 ID 改 `crypto.randomUUID()`；
+  - 密码全面移出 URL：前端媒体/下载改经鉴权头加载，分享页新增 `x-share-password` header 通道（保留 query 兼容）；
+  - 新增 helmet 安全响应头，上传 `.html/.svg` 等风险类型强制下载；基础镜像升级 `node:22-alpine`。
+- **Features（新特性）**：
+  - 新增优雅停机（SIGTERM/SIGINT 先落盘再退出）；
+  - 新增 `TEXT_MESSAGE_MAX_LENGTH` 文本长度上限（默认 100000 字符，超限 413）。
+- **Fixed（修复）**：
+  - 修复游标分页同毫秒时间戳消息可能跨页丢失的边界问题；
+  - 修复 Service Worker 版本化资源无法命中缓存的问题，静态资源版本与发布版本对齐。
+- **Chore（清理）**：
+  - 移除未使用的 `heic2any` npm 依赖、冗余中间件与死导出；同步 AGENTS/README 文档。
+
 ## 1.7.0（2026-10-22）
 
 - **Features（新特性）**：

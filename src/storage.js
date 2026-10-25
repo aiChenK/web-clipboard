@@ -1,6 +1,6 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { MULTI_USER_MODE, STORAGE_ROOT, UPLOAD_ROOT, MIGRATE_DEFAULT_USER, userPasswordMap } = require('./config');
+const { MULTI_USER_MODE, STORAGE_ROOT, UPLOAD_ROOT, MIGRATE_DEFAULT_USER } = require('./config');
 const { ensureDir, clampPageSize } = require('./utils');
 
 // 用户数据存储结构: userId -> { messages, lastActivity }
@@ -56,14 +56,6 @@ function getUserState(userId) {
     userStates.set(userId, { messages: [], lastActivity: Date.now() });
   }
   return userStates.get(userId);
-}
-
-// 通过密码获取用户ID
-function getUserIdByPassword(password) {
-  if (!MULTI_USER_MODE) {
-    return null;
-  }
-  return userPasswordMap.get(password) || null;
 }
 
 // 规范化持久化状态
@@ -229,7 +221,7 @@ function schedulePersist(userId = null) {
   });
 }
 
-// 判断消息是否为视频消息
+// 判断消息是否为视频消息（前端 public/app.js 的 matchesCurrentSearch 存在等价实现，修改时需同步）
 function isVideoMessage(item) {
   if (!item || item.type !== 'file' || !item.content) return false;
   const content = item.content;
@@ -241,6 +233,7 @@ function isVideoMessage(item) {
 }
 
 // 检查单条消息是否符合分类要求
+// 注意：前端 public/app.js 的 matchesCurrentSearch 存在等价实现，修改本组函数时需同步
 function matchesCategory(item, category) {
   if (!category || category === 'all') return true;
   if (category === 'text') {
@@ -303,9 +296,9 @@ function getMessagesPage({ before, limit, userId = null, keyword = null, categor
   // 1. 先进行分类和关键词过滤
   const filteredMessages = filterMessages(state.messages, { keyword, category });
 
-  // 2. 沿用基于时间戳的游标分页
+  // 2. 沿用基于时间戳的游标分页（<= 含边界：同毫秒多条消息不会跨页丢失，客户端按 id 去重）
   const source = Number.isFinite(before)
-    ? filteredMessages.filter((item) => item.timestamp < before)
+    ? filteredMessages.filter((item) => item.timestamp <= before)
     : filteredMessages;
   const start = Math.max(source.length - pageLimit, 0);
   const page = source.slice(start);
@@ -317,35 +310,42 @@ function getMessagesPage({ before, limit, userId = null, keyword = null, categor
   };
 }
 
+// 停机前全量落盘：等待调度中的脏数据写完，避免 SIGTERM 丢失最后一批消息
+async function flushAllPersist() {
+  if (dirtyUserIds.size > 0) {
+    schedulePersist();
+  }
+  const targets = MULTI_USER_MODE ? Array.from(userStates.keys()) : [null];
+  for (const uid of targets) {
+    try {
+      await persistState(uid);
+    } catch (error) {
+      console.error(`停机前持久化失败 (用户: ${uid || '单用户'}):`, error);
+    }
+  }
+}
+
 module.exports = {
   // 状态变量
   userStates,
 
   // 目录路径函数
-  getUserDataDir,
-  getUserDataFile,
   getUserUploadRoot,
-  getDataFile,
   getUploadRoot,
   SINGLE_USER_DATA_FILE,
 
   // 状态管理函数
   getUserState,
-  getUserIdByPassword,
 
   // 持久化函数
-  normalizePersistedState,
   loadPersistedState,
-  persistState,
   migrateLegacyData,
   schedulePersist,
+  flushAllPersist,
 
   // 分页函数
   getMessagesPage,
 
   // 搜索与过滤工具函数
-  filterMessages,
-  isVideoMessage,
-  matchesCategory,
-  matchesKeyword
+  filterMessages
 };

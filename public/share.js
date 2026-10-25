@@ -17,6 +17,11 @@ const toastEl = document.getElementById('toast');
 let shareId = null;
 let verifiedPassword = null;
 
+// 分享密码统一经 header 传递，避免进入 URL 与访问日志（服务端兼容 query 通道）
+function shareAuthHeaders() {
+  return verifiedPassword ? { 'x-share-password': verifiedPassword } : {};
+}
+
 function showToast(message) {
   toastEl.textContent = message;
   toastEl.classList.remove('hidden');
@@ -89,17 +94,26 @@ function renderMessage(msg) {
     const imgContainer = document.createElement('div');
     imgContainer.className = 'share-image-container';
 
-    const pwdParam = verifiedPassword ? `?password=${encodeURIComponent(verifiedPassword)}` : '';
-    const shareImageUrl = `/api/share/${shareId}/image${pwdParam}`;
+    const shareImageUrl = `/api/share/${shareId}/image`;
 
     const img = document.createElement('img');
     img.className = 'share-image';
-    img.src = shareImageUrl;
-    img.alt = '分享图片';
+    img.alt = '分享图片加载中...';
 
     img.addEventListener('click', () => {
-      openImageViewer({ thumbnail: shareImageUrl });
+      if (img.src) openImageViewer({ thumbnail: img.src });
     });
+
+    fetch(shareImageUrl, { headers: shareAuthHeaders() })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`图片加载失败: ${res.status}`);
+        const blob = await res.blob();
+        img.src = URL.createObjectURL(blob);
+      })
+      .catch((err) => {
+        console.error('分享图片加载失败:', err);
+        img.alt = '图片加载失败';
+      });
 
     imgContainer.appendChild(img);
     shareMessage.appendChild(imgContainer);
@@ -128,9 +142,26 @@ function renderMessage(msg) {
     const downloadBtn = document.createElement('button');
     downloadBtn.className = 'btn btn-primary share-action-btn';
     downloadBtn.textContent = '下载文件';
-    downloadBtn.addEventListener('click', () => {
-      const pwdParam = verifiedPassword ? `?password=${encodeURIComponent(verifiedPassword)}` : '';
-      window.open(`/api/share/${shareId}/file${pwdParam}`, '_blank', 'noopener');
+    downloadBtn.addEventListener('click', async () => {
+      downloadBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/share/${shareId}/file`, { headers: shareAuthHeaders() });
+        if (!res.ok) throw new Error(`下载失败: ${res.status}`);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileData.name || 'file';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      } catch (err) {
+        console.error('分享文件下载失败:', err);
+        showToast('下载失败，请稍后重试');
+      } finally {
+        downloadBtn.disabled = false;
+      }
     });
     shareMessage.appendChild(downloadBtn);
   }
@@ -180,13 +211,10 @@ async function loadShare() {
 
 async function loadShareContent() {
   try {
-    // 构建请求 URL，如果有密码则在查询参数中传递
-    let url = `/api/share/${shareId}/content`;
-    if (verifiedPassword) {
-      url += `?password=${encodeURIComponent(verifiedPassword)}`;
-    }
+    // 密码经 header 传递（兼容服务端 query 通道，见 shareAuthHeaders 注释）
+    const url = `/api/share/${shareId}/content`;
 
-    const response = await fetch(url);
+    const response = await fetch(url, { headers: shareAuthHeaders() });
 
     const data = await response.json();
 

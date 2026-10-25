@@ -3,7 +3,7 @@
  */
 
 import { state } from '../state.js';
-import { STORAGE_KEYS } from '../config.js';
+import { authFetch } from '../api.js';
 import { copyTextToClipboard, copyImageToClipboard, copyOriginalImageWithFallback } from '../media/clipboard.js';
 
 export function createMessageElement(msg, {
@@ -67,7 +67,12 @@ export function createMessageElement(msg, {
   if (msg.type === 'text') {
     const contentEl = document.createElement('div');
     contentEl.className = 'message-content text';
-    contentEl.innerHTML = utils ? utils.renderSmartText(msg.content, searchKeyword) : msg.content;
+    if (utils) {
+      contentEl.innerHTML = utils.renderSmartText(msg.content, searchKeyword);
+    } else {
+      // utils.js 加载失败时的安全回退：纯文本渲染，绝不直接 innerHTML 消息内容
+      contentEl.textContent = msg.content;
+    }
 
     const lines = (msg.content || '').split('\n').length;
     const isLongByContent = lines > 6 || (msg.content && msg.content.length > 220);
@@ -214,33 +219,67 @@ export function createMessageElement(msg, {
     contentEl.appendChild(nameEl);
     contentEl.appendChild(metaEl);
 
-    // 凭证链接拼装，供音视频播放和下载使用
-    const params = new URLSearchParams();
-    if (state.currentMode === 'multi' && state.userId) {
-      params.set('userId', state.userId);
-    }
-    const savedPassword = localStorage.getItem(STORAGE_KEYS.PASSWORD);
-    if (savedPassword) {
-      params.set('password', savedPassword);
-    }
-    const mediaUrl = `/api/messages/${msg.id}/file-download?${params.toString()}`;
+    // 媒体与下载统一经 authFetch 携带鉴权头后转 blob，避免访问密码进入 URL
+    const mediaUrl = `/api/messages/${msg.id}/file-download`;
 
-    // 如果是音频文件，内联音频播放器
+    async function fetchAuthenticatedBlobUrl(targetUrl) {
+      try {
+        const response = await authFetch(targetUrl);
+        if (!response.ok) throw new Error(`加载失败: ${response.status}`);
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+      } catch (err) {
+        console.error('媒体资源加载失败:', err);
+        return null;
+      }
+    }
+
+    // 如果是音频文件，内联音频播放器（小体积，渲染时即预取）
     if (fileData.mimeType && fileData.mimeType.startsWith('audio/')) {
       const audioEl = document.createElement('audio');
-      audioEl.src = mediaUrl;
       audioEl.controls = true;
       audioEl.className = 'message-audio';
+      fetchAuthenticatedBlobUrl(mediaUrl).then((blobUrl) => {
+        if (blobUrl) {
+          audioEl._blobUrl = blobUrl;
+          audioEl.src = blobUrl;
+        } else {
+          audioEl.remove();
+        }
+      });
       contentEl.appendChild(audioEl);
     }
 
-    // 如果是视频文件，内联视频播放器
+    // 如果是视频文件，懒加载播放器：避免渲染列表即整段下载大视频
     if (fileData.mimeType && fileData.mimeType.startsWith('video/')) {
+      const loadBtn = document.createElement('button');
+      loadBtn.type = 'button';
+      loadBtn.className = 'btn btn-secondary';
+      loadBtn.textContent = '▶ 加载视频';
+
       const videoEl = document.createElement('video');
-      videoEl.src = mediaUrl;
       videoEl.controls = true;
-      videoEl.preload = 'metadata';
-      videoEl.className = 'message-video';
+      videoEl.preload = 'none';
+      videoEl.className = 'message-video hidden';
+
+      loadBtn.addEventListener('click', async () => {
+        if (videoEl._blobUrl || loadBtn.disabled) return;
+        loadBtn.disabled = true;
+        loadBtn.textContent = '视频加载中...';
+        const blobUrl = await fetchAuthenticatedBlobUrl(mediaUrl);
+        if (blobUrl) {
+          videoEl._blobUrl = blobUrl;
+          videoEl.src = blobUrl;
+          loadBtn.classList.add('hidden');
+          videoEl.classList.remove('hidden');
+          videoEl.play().catch(() => {});
+        } else {
+          loadBtn.disabled = false;
+          loadBtn.textContent = '▶ 重新加载视频';
+        }
+      });
+
+      contentEl.appendChild(loadBtn);
       contentEl.appendChild(videoEl);
     }
 
@@ -250,8 +289,23 @@ export function createMessageElement(msg, {
     const downloadBtn = document.createElement('button');
     downloadBtn.className = 'btn btn-secondary';
     downloadBtn.textContent = '下载文件';
-    downloadBtn.addEventListener('click', () => {
-      window.open(mediaUrl, '_blank', 'noopener');
+    downloadBtn.addEventListener('click', async () => {
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = '下载中...';
+      const blobUrl = await fetchAuthenticatedBlobUrl(mediaUrl);
+      downloadBtn.disabled = false;
+      downloadBtn.textContent = '下载文件';
+      if (!blobUrl) {
+        if (onToast) onToast('下载失败，请稍后重试');
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileData.name || 'file';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     });
     actionsEl.appendChild(downloadBtn);
   }

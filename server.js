@@ -8,11 +8,10 @@ const {
   STORAGE_ROOT,
   UPLOAD_ROOT,
   FILE_CLEANUP_INTERVAL_MINUTES,
-  userPasswordMap,
-  userIdSet
+  userPasswordMap
 } = require('./src/config');
 const { ensureDir } = require('./src/utils');
-const { loadPersistedState, migrateLegacyData, SINGLE_USER_DATA_FILE } = require('./src/storage');
+const { loadPersistedState, migrateLegacyData, SINGLE_USER_DATA_FILE, flushAllPersist } = require('./src/storage');
 const { cleanupOrphanDiskFiles, cleanupExpiredData, startCleanupSchedulers } = require('./src/cleanup');
 const { createApp } = require('./src/app');
 const { deleteAllShares, SHARE_DIR } = require('./src/share');
@@ -101,6 +100,23 @@ async function start() {
     console.log(`数据存储目录: ${STORAGE_ROOT}`);
     console.log(`孤儿文件清理间隔: ${FILE_CLEANUP_INTERVAL_MINUTES} 分钟`);
   });
+
+  // 优雅停机：先落盘脏数据，再关闭连接，3 秒兜底强制退出
+  let shuttingDown = false;
+  const shutdown = async (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`收到 ${signal}，正在优雅停机...`);
+    try {
+      await flushAllPersist();
+    } catch (error) {
+      console.error('停机前持久化异常:', error);
+    }
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 3000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 start().catch((error) => {
