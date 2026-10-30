@@ -1,5 +1,5 @@
 // 缓存版本号与 package.json 发布版本及 index.html 静态资源 ?v= 同步更新
-const CACHE_NAME = 'web-clipboard-v1.7.1';
+const CACHE_NAME = 'web-clipboard-v1.8.0';
 const ASSETS = [
   '/',
   '/index.html',
@@ -56,11 +56,16 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
 
-  // 安全排除：API、大文件上传目录以及 Socket.IO 连接不进行 Service Worker 拦截缓存
+  // 安全排除：API、大文件上传目录、Socket.IO 连接以及管理端页面
+  // （管理端入口是否可用由服务端按 ADMIN_PASSWORD 决定，不能被缓存"复活"）
   if (
     url.pathname.startsWith('/api/') ||
     url.pathname.startsWith('/uploads/') ||
-    url.pathname.startsWith('/socket.io/')
+    url.pathname.startsWith('/socket.io/') ||
+    url.pathname === '/admin' ||
+    url.pathname === '/admin.html' ||
+    url.pathname === '/admin.js' ||
+    url.pathname === '/admin.css'
   ) {
     return;
   }

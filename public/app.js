@@ -55,6 +55,8 @@ import {
 // ========== DOM 元素引用 ==========
 const authSection = document.getElementById('auth-section');
 const chatSection = document.getElementById('chat-section');
+const authTitle = document.getElementById('auth-title');
+const usernameInput = document.getElementById('username-input');
 const passwordInput = document.getElementById('password-input');
 const authBtn = document.getElementById('auth-btn');
 const authError = document.getElementById('auth-error');
@@ -1182,6 +1184,36 @@ if (clearAllBtn) {
 }
 
 // ========== 退出登录 ==========
+function clearStoredCredentials() {
+  localStorage.removeItem(STORAGE_KEYS.PASSWORD);
+  localStorage.removeItem(STORAGE_KEYS.USER_ID);
+  localStorage.removeItem(STORAGE_KEYS.LOGIN_TIMESTAMP);
+}
+
+// 渲染登录表单：多用户模式展示用户名 + 密码，单用户模式仅密码
+function showAuthForm() {
+  const isMulti = state.currentMode === 'multi';
+
+  if (authTitle) {
+    authTitle.textContent = isMulti ? '请输入用户名与密码' : '请输入访问密码';
+  }
+
+  if (usernameInput) {
+    usernameInput.classList.toggle('hidden', !isMulti);
+    if (isMulti) {
+      usernameInput.value = localStorage.getItem(STORAGE_KEYS.USER_ID) || '';
+    }
+  }
+
+  if (authError) authError.classList.add('hidden');
+  if (authSection) authSection.classList.remove('hidden');
+  if (chatSection) chatSection.classList.add('hidden');
+  if (passwordInput) passwordInput.value = '';
+
+  const focusEl = isMulti ? usernameInput : passwordInput;
+  if (focusEl) focusEl.focus();
+}
+
 function logout(showMessage = true) {
   const prevUserId = state.userId;
   revokeBlobUrls(messagesList);
@@ -1193,9 +1225,7 @@ function logout(showMessage = true) {
   }
 
   disconnectSocket();
-  localStorage.removeItem(STORAGE_KEYS.PASSWORD);
-  localStorage.removeItem(STORAGE_KEYS.USER_ID);
-  localStorage.removeItem(STORAGE_KEYS.LOGIN_TIMESTAMP);
+  clearStoredCredentials();
 
   if (expireCheckInterval) {
     clearInterval(expireCheckInterval);
@@ -1210,14 +1240,10 @@ function logout(showMessage = true) {
   state.messages = [];
   state.favorites = [];
   state.userId = null;
+  state.displayName = '';
 
-  if (authSection) authSection.classList.remove('hidden');
-  if (chatSection) chatSection.classList.add('hidden');
-  if (passwordInput) {
-    passwordInput.value = '';
-    passwordInput.focus();
-  }
   if (currentUserEl) currentUserEl.classList.add('hidden');
+  showAuthForm();
 
   if (showMessage) showToast('已退出登录');
 }
@@ -1246,7 +1272,7 @@ function enterApp() {
   state.isAuthenticated = true;
 
   if (state.currentMode === 'multi' && state.userId && currentUserEl) {
-    currentUserEl.textContent = `👤 ${state.userId}`;
+    currentUserEl.textContent = `👤 ${state.displayName || state.userId}`;
     currentUserEl.classList.remove('hidden');
   }
 
@@ -1261,13 +1287,26 @@ function enterApp() {
 
 async function handleLogin() {
   const password = passwordInput ? passwordInput.value : '';
+  const isMulti = state.currentMode === 'multi';
+  const username = isMulti && usernameInput ? usernameInput.value.trim().toLowerCase() : '';
+
   if (authError) authError.classList.add('hidden');
 
+  if (isMulti && !username) {
+    if (authError) {
+      authError.textContent = '请输入用户名';
+      authError.classList.remove('hidden');
+    }
+    if (usernameInput) usernameInput.focus();
+    return;
+  }
+
   try {
-    const res = await apiLogin(password);
+    const res = await apiLogin(username, password);
     if (res.success) {
       state.currentMode = res.mode || 'single';
       state.userId = res.userId || null;
+      state.displayName = res.displayName || '';
 
       if (!res.noPassword) {
         localStorage.setItem(STORAGE_KEYS.PASSWORD, password);
@@ -1280,7 +1319,7 @@ async function handleLogin() {
     }
   } catch (err) {
     if (authError) {
-      authError.textContent = err.message || '密码错误';
+      authError.textContent = err.message || '用户名或密码错误';
       authError.classList.remove('hidden');
     }
   }
@@ -1290,6 +1329,11 @@ if (authBtn) authBtn.addEventListener('click', handleLogin);
 if (passwordInput) {
   passwordInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleLogin();
+  });
+}
+if (usernameInput) {
+  usernameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && passwordInput) passwordInput.focus();
   });
 }
 
@@ -1405,22 +1449,41 @@ async function initApp() {
 
     const savedPassword = localStorage.getItem(STORAGE_KEYS.PASSWORD);
     const savedUserId = localStorage.getItem(STORAGE_KEYS.USER_ID);
+    const isMulti = state.currentMode === 'multi';
+    // 多用户模式必须同时具备用户名与密码，缺一即视为残留凭证
+    const hasCompleteCredential = Boolean(savedPassword) && (!isMulti || Boolean(savedUserId));
 
     if (!state.requirePassword) {
       if (logoutBtn) logoutBtn.classList.add('hidden');
       enterApp();
-    } else if (savedPassword) {
-      state.userId = savedUserId || null;
-      enterApp();
+    } else if (hasCompleteCredential) {
+      // 进入前静默校验一次，避免带着失效凭证进主界面后每个请求都 401
+      try {
+        const verified = await apiLogin(isMulti ? savedUserId : '', savedPassword);
+        state.currentMode = verified.mode || state.currentMode;
+        state.userId = verified.userId || null;
+        state.displayName = verified.displayName || '';
+        enterApp();
+      } catch (verifyError) {
+        if (verifyError.status === 429) {
+          // 限流只说明请求太频繁，不代表凭证失效，按本地凭证进入即可，
+          // 否则用户一分钟内刷新几次就会被踢回登录页并清掉凭证。
+          console.warn('静默校验被限流，按本地凭证直接进入');
+          state.userId = isMulti ? savedUserId : null;
+          enterApp();
+        } else {
+          console.warn('本地凭证已失效，返回登录页:', verifyError.message);
+          clearStoredCredentials();
+          showAuthForm();
+        }
+      }
     } else {
-      if (authSection) authSection.classList.remove('hidden');
-      if (chatSection) chatSection.classList.add('hidden');
-      if (passwordInput) passwordInput.focus();
+      if (savedPassword || savedUserId) clearStoredCredentials();
+      showAuthForm();
     }
   } catch (err) {
     console.error('初始化认证失败，降级显示登录页:', err);
-    if (authSection) authSection.classList.remove('hidden');
-    if (chatSection) chatSection.classList.add('hidden');
+    showAuthForm();
   }
 
   // 注册 PWA Service Worker

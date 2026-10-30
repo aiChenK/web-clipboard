@@ -1,45 +1,44 @@
-const { MULTI_USER_MODE, ACCESS_PASSWORD, userPasswordMap } = require('../config');
+const { ACCESS_PASSWORD } = require('../config');
+const { isMultiUserMode, authenticate } = require('../users');
 const { timingSafeCompare } = require('../utils');
 
-// 统一的安全性认证中间件
-function requireAuth(req, res, next) {
+// 从各类通道读取凭证：header 优先，其次请求体，最后查询参数
+function readCredential(req) {
   const headers = req.headers || {};
-  const query = req.query || {};
   const body = req.body || {};
+  const query = req.query || {};
 
-  // 尝试从各个通道获取密码凭证和用户ID
-  const password = headers['x-access-password'] || body.password || query.password || '';
-  const userId = headers['x-user-id'] || body.userId || query.userId || null;
+  return {
+    password: headers['x-access-password'] || body.password || query.password || '',
+    userId: headers['x-user-id'] || body.userId || query.userId || ''
+  };
+}
 
-  if (MULTI_USER_MODE) {
-    // 多用户模式
+// 统一的安全性认证中间件
+// 多用户模式：用户名 + 密码双要素，服务端按用户名定位并绑定 req.userId（不信任客户端传入的 userId）
+// 单用户模式：沿用仅密码（可选）认证，req.userId 恒为 null
+function requireAuth(req, res, next) {
+  const { password, userId } = readCredential(req);
+
+  if (isMultiUserMode()) {
+    if (!userId) {
+      return res.status(401).json({ error: '未授权访问：缺少用户名' });
+    }
+
     if (!password) {
       return res.status(401).json({ error: '未授权访问：缺少凭证' });
     }
 
-    let matchedUserId = null;
-    for (const [validPassword, mappedUser] of userPasswordMap.entries()) {
-      if (timingSafeCompare(password, validPassword)) {
-        matchedUserId = mappedUser;
-        break;
-      }
+    const result = authenticate(userId, password);
+    if (!result.ok) {
+      const status = result.code === 'disabled' ? 403 : 401;
+      return res.status(status).json({ error: result.error });
     }
 
-    if (!matchedUserId) {
-      return res.status(401).json({ error: '未授权访问：凭证无效' });
-    }
-
-    // 校验传入的 userId 是否与由密码推导出的匹配
-    if (userId && matchedUserId !== userId) {
-      return res.status(401).json({ error: '未授权访问：凭证与用户ID不匹配' });
-    }
-
-    // 绑定校验成功后的真实 userId
-    req.userId = matchedUserId;
+    req.userId = result.user.id;
     return next();
   }
 
-  // 单用户模式
   if (ACCESS_PASSWORD) {
     if (!timingSafeCompare(password, ACCESS_PASSWORD)) {
       return res.status(401).json({ error: '未授权访问：密码错误' });

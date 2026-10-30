@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const { MIME_EXTENSION_MAP, MESSAGE_PAGE_SIZE, MULTI_USER_MODE } = require('./config');
+const { MIME_EXTENSION_MAP, MESSAGE_PAGE_SIZE } = require('./config');
 
 // 分页大小限制
 function clampPageSize(limit) {
@@ -19,9 +19,9 @@ function toPosixPath(filePath) {
   return filePath.split(path.sep).join('/');
 }
 
-// 获取上传文件 URL
+// 获取上传文件 URL（userId 非空即多用户模式，单用户模式恒为 null）
 function toUploadUrl(relativePath, userId = null) {
-  if (MULTI_USER_MODE && userId) {
+  if (userId) {
     return `/uploads/${userId}/${toPosixPath(relativePath)}`;
   }
   return `/uploads/${toPosixPath(relativePath)}`;

@@ -283,6 +283,41 @@ async function deleteSharesByMessageId(messageId, userId = null) {
   }
 }
 
+// 删除指定用户的全部分享（删除用户 / 迁移数据时调用）
+async function deleteSharesByUser(userId) {
+  if (!userId) return 0;
+
+  try {
+    const entries = await fs.readdir(SHARE_DIR).catch((error) => {
+      if (error && error.code === 'ENOENT') return [];
+      throw error;
+    });
+
+    let removedCount = 0;
+
+    for (const filename of entries) {
+      if (!filename.endsWith('.json')) continue;
+
+      const shareId = filename.slice(0, -5);
+      const share = await loadShare(shareId);
+
+      if (share && share.userId === userId) {
+        await deleteShare(shareId);
+        removedCount += 1;
+      }
+    }
+
+    if (removedCount > 0) {
+      console.log(`已删除用户 ${userId} 的 ${removedCount} 个分享`);
+    }
+
+    return removedCount;
+  } catch (error) {
+    console.error(`删除用户 ${userId} 的分享失败:`, error);
+    return 0;
+  }
+}
+
 // 获取用户的分享列表
 async function getShareList(userId = null) {
   try {
@@ -341,6 +376,7 @@ module.exports = {
   getShareContent,
   cleanupExpiredShares,
   deleteSharesByMessageId,
+  deleteSharesByUser,
   deleteAllShares,
   getShareList,
   SHARE_DIR

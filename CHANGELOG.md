@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.8.0（2026-10-30）
+
+- **Features（新特性）**：
+  - 用户表独立为 `data/users.json`，成为唯一真相源；`ACCESS_PASSWORDS` 仅首次种子导入，之后以文件为准；
+  - 新增 `/admin` 管理界面（`ADMIN_PASSWORD` 启用）：用户增删、重置密码、启停、删除并清除数据，附用量与运行时统计；
+  - 管理操作即时生效，删除/禁用会立即断开该用户在线连接；删除最后一个用户后退回单用户模式；
+  - 多用户模式改为「用户名 + 密码」登录，`displayName` 仅用于展示。
+- **Changes（接口契约变更）**：
+  - 多用户模式下 `POST /api/auth` 与 WebSocket 握手均必须携带 `userId`，不再支持仅密码登录；
+  - 单/多用户模式由启动常量改为按用户表动态判定，模式切换时会清空全部分享。
+- **Security（安全加固）**：
+  - 密码改为 scrypt + 每用户独立 salt 哈希，`users.json` 以 0600 写入；
+  - 用户不存在时执行 dummy scrypt，配合统一文案阻断用户名枚举；`GET /api/auth/status` 不再返回用户列表；
+  - 未配置 `ADMIN_PASSWORD` 时管理端整体 404，且排除在 Service Worker 缓存之外。
+
 ## 1.7.1（2026-10-25）
 
 - **Security（安全加固）**：

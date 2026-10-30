@@ -1,13 +1,15 @@
 const path = require('path');
 const express = require('express');
-const { MULTI_USER_MODE, ACCESS_PASSWORD, UPLOAD_ROOT } = require('../config');
+const { ACCESS_PASSWORD, ADMIN_PASSWORD, UPLOAD_ROOT } = require('../config');
+const { isMultiUserMode } = require('../users');
 const { getUserUploadRoot } = require('../storage');
 const { requireAuth } = require('../middleware/auth');
 const authRoutes = require('./auth');
 const messagesRoutes = require('./messages');
 const favoritesRoutes = require('./favorites');
 const shareRoutes = require('./share');
-const { apiLimiter } = require('../middleware/rateLimit');
+const adminRoutes = require('./admin');
+const { apiLimiter, adminLimiter } = require('../middleware/rateLimit');
 
 // 上传静态文件响应加固：nosniff + 风险类型强制下载
 // （阻断 .html/.svg 等同源导航执行；<img>/<video> 嵌入渲染不受 Content-Disposition 影响）
@@ -21,26 +23,38 @@ function uploadStaticHardening(req, res, next) {
   next();
 }
 
+function serveSingleUserUploads(req, res, next) {
+  const serveStatic = () => uploadStaticHardening(req, res, () => express.static(UPLOAD_ROOT)(req, res, next));
+
+  if (ACCESS_PASSWORD) {
+    return requireAuth(req, res, serveStatic);
+  }
+
+  return serveStatic();
+}
+
 // 设置静态文件路由（上传文件，增加权限控制与租户隔离）
+// 多用户 / 单用户模式可运行期切换，因此两个分支都常驻注册，由 isMultiUserMode() 在请求时决定归属
 function setupUploadRoutes(app) {
-  if (MULTI_USER_MODE) {
-    // 多用户模式：必须认证且仅允许访问属于当前登录用户的数据
-    app.use('/uploads/:userId', requireAuth, uploadStaticHardening, (req, res, next) => {
+  // 单用户模式：多用户模式下直接放行给后一个处理链
+  app.use('/uploads', (req, res, next) => {
+    if (isMultiUserMode()) return next();
+    return serveSingleUserUploads(req, res, next);
+  });
+
+  // 多用户模式：必须认证且仅允许访问属于当前登录用户的数据
+  app.use('/uploads/:userId', (req, res, next) => {
+    if (!isMultiUserMode()) return next();
+
+    return requireAuth(req, res, () => {
       const targetUserId = req.params.userId;
       if (req.userId !== targetUserId) {
         return res.status(403).json({ error: '禁止访问：无权访问其他用户的私密附件' });
       }
       const userUploadRoot = getUserUploadRoot(targetUserId);
-      express.static(userUploadRoot)(req, res, next);
+      uploadStaticHardening(req, res, () => express.static(userUploadRoot)(req, res, next));
     });
-  } else {
-    // 单用户模式：若配置了访问密码，必须通过密码鉴权方可访问上传目录
-    if (ACCESS_PASSWORD) {
-      app.use('/uploads', requireAuth, uploadStaticHardening, express.static(UPLOAD_ROOT));
-    } else {
-      app.use('/uploads', uploadStaticHardening, express.static(UPLOAD_ROOT));
-    }
-  }
+  });
 }
 
 // 设置 API 路由
@@ -60,12 +74,27 @@ function setupApiRoutes(app) {
 
   // 分享路由
   app.use('/api/share', apiLimiter, shareRoutes);
+
+  // 管理端路由（未配置 ADMIN_PASSWORD 时由 admin.js 内部统一返回 404）
+  app.use('/api/admin', adminLimiter, adminRoutes);
 }
 
 // 设置所有路由
 function setupRoutes(app) {
-  // 静态文件（前端）
   const publicPath = path.join(__dirname, '..', '..', 'public');
+
+  // 管理端页面：未配置 ADMIN_PASSWORD 时连页面入口都不存在
+  // 必须注册在静态目录之前，否则 admin.html 会被 express.static 直接放出去
+  const adminPageHandler = (req, res, next) => {
+    if (!ADMIN_PASSWORD) {
+      return res.status(404).type('text/plain').send('Not Found');
+    }
+    return res.sendFile(path.join(publicPath, 'admin.html'));
+  };
+  app.get('/admin', adminPageHandler);
+  app.get('/admin.html', adminPageHandler);
+
+  // 静态文件（前端）
   app.use(express.static(publicPath));
 
   // 上传文件受控静态路由

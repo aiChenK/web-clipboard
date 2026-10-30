@@ -4,6 +4,8 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const ACCESS_PASSWORD = process.env.ACCESS_PASSWORD || '';
 const ACCESS_PASSWORDS = process.env.ACCESS_PASSWORDS || '';
+// 管理端密码：未配置时 /admin 与 /api/admin/* 一律 404（不暴露入口存在）
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const MIGRATE_DEFAULT_USER = process.env.MIGRATE_DEFAULT_USER || '';
 const EXPIRE_HOURS = Number.parseInt(process.env.EXPIRE_HOURS, 10) || 168;
 const MESSAGE_PAGE_SIZE = Number.parseInt(process.env.MESSAGE_PAGE_SIZE, 10) || 30;
@@ -15,9 +17,17 @@ const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '..', 'dat
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(STORAGE_ROOT, 'uploads');
 const FILE_CLEANUP_INTERVAL_MINUTES = Number.parseInt(process.env.FILE_CLEANUP_INTERVAL_MINUTES, 10) || 30;
 
+// 用户表文件：多用户模式的唯一真相源
+const USERS_FILE = process.env.USERS_FILE || path.join(STORAGE_ROOT, 'users.json');
+// 用户数据根目录（每个用户一个子目录）
+const USERS_DATA_ROOT = path.join(STORAGE_ROOT, 'users');
+
 // 分享功能配置
 const SHARE_MAX_EXPIRE_HOURS = Number.parseInt(process.env.SHARE_MAX_EXPIRE_HOURS, 10) || 168;
 const SHARE_DIR = path.join(STORAGE_ROOT, 'shares');
+
+// 用户名规则：全链路小写，同时作为数据目录名与上传 URL 段
+const USER_ID_PATTERN = /^[a-z0-9_-]{1,32}$/;
 
 // 获取版本号
 function getAppVersion() {
@@ -30,69 +40,61 @@ function getAppVersion() {
 
 const APP_VERSION = getAppVersion();
 
-// 多用户模式判断
-const MULTI_USER_MODE = Boolean(ACCESS_PASSWORDS);
+// 解析 ACCESS_PASSWORDS 为种子用户列表。
+// 仅在 users.json 不存在时用于首次导入；导入后运行期以 users.json 为唯一真相源。
+// 不再要求密码唯一（登录以用户名为准），字符集非法与 userId 重复会记录为错误。
+const envUserSeeds = [];
+const envUserSeedErrors = [];
+const envUserSeedWarnings = [];
 
-// 解析密码映射: userId:password，并校验格式和密码唯一性
-const userPasswordMap = new Map();
-const userIdSet = new Set();
-const passwordSet = new Set();
-const parseErrors = [];
-
-if (MULTI_USER_MODE) {
-  const pairs = ACCESS_PASSWORDS.split(',').map((s) => s.trim()).filter(Boolean);
+function parseEnvUserSeeds(raw) {
+  const pairs = String(raw).split(',').map((s) => s.trim()).filter(Boolean);
 
   for (let i = 0; i < pairs.length; i++) {
     const pair = pairs[i];
-    const parts = pair.split(':').map((s) => s.trim());
+    const separatorIndex = pair.indexOf(':');
 
-    if (parts.length !== 2) {
-      parseErrors.push(`第 ${i + 1} 个配置格式错误: "${pair}"，应为 "userId:password"`);
+    if (separatorIndex <= 0) {
+      envUserSeedErrors.push(`第 ${i + 1} 个配置格式错误: "${pair}"，应为 "userId:password"`);
       continue;
     }
 
-    const [userId, password] = parts;
+    const rawUserId = pair.slice(0, separatorIndex).trim();
+    const password = pair.slice(separatorIndex + 1).trim();
+    const userId = rawUserId.toLowerCase();
 
     if (!userId) {
-      parseErrors.push(`第 ${i + 1} 个配置 userId 为空`);
+      envUserSeedErrors.push(`第 ${i + 1} 个配置用户名为空`);
       continue;
     }
 
     if (!password) {
-      parseErrors.push(`第 ${i + 1} 个配置密码为空 (用户: ${userId})`);
+      envUserSeedErrors.push(`第 ${i + 1} 个配置密码为空 (用户: ${rawUserId})`);
       continue;
     }
 
-    if (userIdSet.has(userId)) {
-      parseErrors.push(`userId 重复: "${userId}"`);
+    if (!USER_ID_PATTERN.test(userId)) {
+      envUserSeedErrors.push(
+        `第 ${i + 1} 个配置用户名非法: "${rawUserId}"，仅允许小写字母、数字、下划线、连字符，长度 1-32`
+      );
       continue;
     }
 
-    if (passwordSet.has(password)) {
-      parseErrors.push(`密码重复，多个用户使用了相同密码 (冲突用户包含: "${userId}")`);
+    if (userId !== rawUserId) {
+      envUserSeedWarnings.push(`用户名 "${rawUserId}" 已规范化为 "${userId}"`);
+    }
+
+    if (envUserSeeds.some((seed) => seed.userId === userId)) {
+      envUserSeedErrors.push(`用户名重复: "${userId}"`);
       continue;
     }
 
-    userIdSet.add(userId);
-    passwordSet.add(password);
-    userPasswordMap.set(password, userId);
+    envUserSeeds.push({ userId, password });
   }
+}
 
-  if (parseErrors.length > 0) {
-    console.error('❌ ACCESS_PASSWORDS 配置错误:');
-    parseErrors.forEach((err) => console.error(`   - ${err}`));
-    console.error('\n正确格式: ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3');
-    console.error('注意：每个用户的密码必须唯一，不能重复');
-    process.exit(1);
-  }
-
-  if (MIGRATE_DEFAULT_USER && !userIdSet.has(MIGRATE_DEFAULT_USER)) {
-    console.error('❌ MIGRATE_DEFAULT_USER 配置错误:');
-    console.error(`   - 迁移目标用户 "${MIGRATE_DEFAULT_USER}" 未在 ACCESS_PASSWORDS 中定义`);
-    console.error('\n请在 ACCESS_PASSWORDS 中添加该用户，例如:');
-    console.error(`   ACCESS_PASSWORDS=${MIGRATE_DEFAULT_USER}:yourpassword,otheruser:otherpass`);
-    process.exit(1);
-  }
+if (ACCESS_PASSWORDS) {
+  parseEnvUserSeeds(ACCESS_PASSWORDS);
 }
 
 // 常量
@@ -121,6 +123,7 @@ module.exports = {
   PORT,
   ACCESS_PASSWORD,
   ACCESS_PASSWORDS,
+  ADMIN_PASSWORD,
   MIGRATE_DEFAULT_USER,
   EXPIRE_HOURS,
   MESSAGE_PAGE_SIZE,
@@ -131,15 +134,19 @@ module.exports = {
   FILE_CLEANUP_INTERVAL_MINUTES,
   APP_VERSION,
 
+  // 用户表
+  USERS_FILE,
+  USERS_DATA_ROOT,
+  USER_ID_PATTERN,
+  envUserSeeds,
+  envUserSeedErrors,
+  envUserSeedWarnings,
+
   // 分享配置
   SHARE_MAX_EXPIRE_HOURS,
   SHARE_DIR,
 
   // 计算常量
   EXPIRE_TIME,
-  MIME_EXTENSION_MAP,
-  MULTI_USER_MODE,
-
-  // 多用户配置
-  userPasswordMap
+  MIME_EXTENSION_MAP
 };

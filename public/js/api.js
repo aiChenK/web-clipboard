@@ -33,16 +33,23 @@ export async function fetchAuthStatus() {
   return response.json();
 }
 
-// 登录验证
-export async function login(password) {
+// 登录验证（多用户模式需同时提供用户名）
+export async function login(userId, password) {
+  const body = { password };
+  if (userId) {
+    body.userId = userId;
+  }
+
   const response = await fetch('/api/auth', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
+    body: JSON.stringify(body)
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || '登录失败');
+    const error = new Error(data.error || '登录失败');
+    error.status = response.status;
+    throw error;
   }
   return data;
 }

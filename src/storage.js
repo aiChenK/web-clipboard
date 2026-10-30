@@ -1,7 +1,8 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { MULTI_USER_MODE, STORAGE_ROOT, UPLOAD_ROOT, MIGRATE_DEFAULT_USER } = require('./config');
+const { STORAGE_ROOT, UPLOAD_ROOT } = require('./config');
 const { ensureDir, clampPageSize } = require('./utils');
+const { isMultiUserMode } = require('./users');
 
 // 用户数据存储结构: userId -> { messages, lastActivity }
 const userStates = new Map();
@@ -32,7 +33,7 @@ const SINGLE_USER_DATA_FILE = path.join(STORAGE_ROOT, 'messages.json');
 
 // 根据模式获取数据文件路径
 function getDataFile(userId) {
-  if (MULTI_USER_MODE && userId) {
+  if (isMultiUserMode() && userId) {
     return getUserDataFile(userId);
   }
   return SINGLE_USER_DATA_FILE;
@@ -40,7 +41,7 @@ function getDataFile(userId) {
 
 // 根据模式获取上传目录
 function getUploadRoot(userId) {
-  if (MULTI_USER_MODE && userId) {
+  if (isMultiUserMode() && userId) {
     return getUserUploadRoot(userId);
   }
   return UPLOAD_ROOT;
@@ -48,7 +49,7 @@ function getUploadRoot(userId) {
 
 // 获取用户状态
 function getUserState(userId) {
-  if (!MULTI_USER_MODE) {
+  if (!isMultiUserMode()) {
     return singleUserState;
   }
 
@@ -56,6 +57,12 @@ function getUserState(userId) {
     userStates.set(userId, { messages: [], lastActivity: Date.now() });
   }
   return userStates.get(userId);
+}
+
+// 丢弃用户内存态（删除用户后调用，避免残留消息继续占用内存）
+function dropUserState(userId) {
+  if (!userId) return false;
+  return userStates.delete(userId);
 }
 
 // 规范化持久化状态
@@ -97,7 +104,7 @@ async function loadPersistedState(userId = null) {
     const parsed = JSON.parse(raw);
     const normalized = normalizePersistedState(parsed);
 
-    if (!MULTI_USER_MODE) {
+    if (!isMultiUserMode()) {
       singleUserState.messages = normalized.messages;
       singleUserState.lastActivity = normalized.lastActivity;
     } else {
@@ -113,7 +120,7 @@ async function loadPersistedState(userId = null) {
       return;
     }
     console.error('读取持久化数据失败，使用空数据启动:', error);
-    if (!MULTI_USER_MODE) {
+    if (!isMultiUserMode()) {
       singleUserState.messages = [];
       singleUserState.lastActivity = Date.now();
     }
@@ -201,7 +208,7 @@ function schedulePersist(userId = null) {
     dirtyUserIds.clear();
 
     try {
-      if (MULTI_USER_MODE) {
+      if (isMultiUserMode()) {
         for (const uid of targetUsers) {
           if (uid) {
             await persistState(uid);
@@ -315,7 +322,7 @@ async function flushAllPersist() {
   if (dirtyUserIds.size > 0) {
     schedulePersist();
   }
-  const targets = MULTI_USER_MODE ? Array.from(userStates.keys()) : [null];
+  const targets = isMultiUserMode() ? Array.from(userStates.keys()) : [null];
   for (const uid of targets) {
     try {
       await persistState(uid);
@@ -330,12 +337,14 @@ module.exports = {
   userStates,
 
   // 目录路径函数
+  getUserDataDir,
   getUserUploadRoot,
   getUploadRoot,
   SINGLE_USER_DATA_FILE,
 
   // 状态管理函数
   getUserState,
+  dropUserState,
 
   // 持久化函数
   loadPersistedState,

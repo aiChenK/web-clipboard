@@ -1,7 +1,7 @@
 const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
-const { MULTI_USER_MODE, EXPIRE_HOURS, TEXT_MESSAGE_MAX_LENGTH } = require('../config');
+const { EXPIRE_HOURS, TEXT_MESSAGE_MAX_LENGTH } = require('../config');
 const { requireAuth } = require('../middleware/auth');
 const { getUserState, getMessagesPage, schedulePersist } = require('../storage');
 const { getUploadRoot, getUserUploadRoot } = require('../storage');

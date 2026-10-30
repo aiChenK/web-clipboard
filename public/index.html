@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.7.1">
+  <link rel="stylesheet" href="style.css?v=1.8.0">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1a1a1a">
   <link rel="apple-touch-icon" href="/favicon.svg">
@@ -21,8 +21,10 @@
 
     <div id="auth-section" class="section">
       <div class="auth-form">
-        <h2>请输入访问密码</h2>
-        <input type="password" id="password-input" placeholder="输入密码" autofocus>
+        <h2 id="auth-title">请输入访问密码</h2>
+        <input type="text" id="username-input" class="hidden" placeholder="用户名" autocomplete="username"
+          autocapitalize="off" autocorrect="off" spellcheck="false">
+        <input type="password" id="password-input" placeholder="输入密码" autocomplete="current-password" autofocus>
         <div class="login-duration-container">
           <label class="checkbox-label">
             <input type="checkbox" id="limit-duration-chk"> 限制登录时间
@@ -258,9 +260,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.7.1"></script>
-  <script src="cache.js?v=1.7.1"></script>
-  <script type="module" src="app.js?v=1.7.1"></script>
+  <script src="utils.js?v=1.8.0"></script>
+  <script src="cache.js?v=1.8.0"></script>
+  <script type="module" src="app.js?v=1.8.0"></script>
 </body>
 
 </html>

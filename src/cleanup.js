@@ -1,6 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { MULTI_USER_MODE, EXPIRE_TIME, STORAGE_ROOT, FILE_CLEANUP_INTERVAL_MINUTES } = require('./config');
+const { EXPIRE_TIME, STORAGE_ROOT, FILE_CLEANUP_INTERVAL_MINUTES } = require('./config');
+const { isMultiUserMode } = require('./users');
 const { getUserState, userStates, loadPersistedState, getUploadRoot, schedulePersist } = require('./storage');
 const { deleteMessageFiles, getMessageFileRefs } = require('./upload');
 const { toPosixPath } = require('./utils');
@@ -51,7 +52,7 @@ async function cleanupExpiredData(userId = null) {
 
 // 清理所有用户过期数据
 async function cleanupAllUsersExpiredData() {
-  if (MULTI_USER_MODE) {
+  if (isMultiUserMode()) {
     const usersDir = path.join(STORAGE_ROOT, 'users');
     let userDirs = [];
     try {
@@ -173,7 +174,7 @@ async function cleanupOrphanDiskFiles(userId = null) {
 
 // 清理所有用户孤儿文件
 async function cleanupAllUsersOrphanFiles() {
-  if (MULTI_USER_MODE) {
+  if (isMultiUserMode()) {
     const usersDir = path.join(STORAGE_ROOT, 'users');
     let userDirs = [];
     try {

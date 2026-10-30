@@ -2,7 +2,6 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getUserState, schedulePersist, filterMessages } = require('../storage');
 const { toPublicMessage } = require('../message');
-const { MULTI_USER_MODE } = require('../config');
 
 const router = express.Router();
 

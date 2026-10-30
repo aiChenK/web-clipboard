@@ -5,6 +5,7 @@
 class StateManager {
   constructor() {
     this.userId = null;
+    this.displayName = '';
     this.currentMode = 'single'; // 'single' 或 'multi'
     this.isAuthenticated = false;
     this.requirePassword = true;

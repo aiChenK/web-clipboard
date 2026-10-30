@@ -5,3 +5,4 @@ build.sh
 AGENTS.md
 .claude/
 .agent_docs/
+.workbuddy/

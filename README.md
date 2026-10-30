@@ -24,7 +24,8 @@
   - 提供独立「我的分享」管理面板，随时查看、复制链接或撤回失效
 - **用户隔离与访问控制**
   - **多模式支持**：支持公开无密码、单用户密码保护及多用户独立空间模式
-  - **多用户隔离**：输入不同密码自动识别用户身份，数据与附件物理隔离
+  - **多用户隔离**：多用户模式以「用户名 + 密码」登录，数据与附件物理隔离
+  - **可视化管理**：配置 `ADMIN_PASSWORD` 后，通过 `/admin` 页面增删用户、重置密码、启停账号并查看存储占用
   - **登录时效控制**：支持自选凭证有效时长（10 分钟～30 天），过期自动清理注销
 - **体验优化与自动维护**
   - **PWA 支持**：可直接“添加到主屏幕”，享受类原生应用的流畅沉浸体验
@@ -54,10 +55,11 @@ docker run -d \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 
-# 多用户模式（密码隔离数据）
+# 多用户模式（用户名 + 密码，数据隔离）
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3 \
+  -e ADMIN_PASSWORD=你的管理密码 \
   -v web-clipboard-data:/app/data \
   --name web-clipboard \
   aichenk/web-clipboard:latest
@@ -75,8 +77,9 @@ services:
     environment:
       # 单用户模式
       - ACCESS_PASSWORD=你的密码
-      # 多用户模式（取消注释使用）
+      # 多用户模式（取消注释使用；仅首次启动作为种子导入 users.json）
       # - ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
+      # - ADMIN_PASSWORD=你的管理密码  # 启用 /admin 管理界面
       # - MIGRATE_DEFAULT_USER=user1  # 迁移单用户数据到指定用户
       - EXPIRE_HOURS=168
       - FILE_CLEANUP_INTERVAL_MINUTES=30
@@ -104,7 +107,8 @@ npm start
 |------|------|--------|
 | `PORT` | 服务端口 | `3000` |
 | `ACCESS_PASSWORD` | 单用户模式访问密码（留空则为无密码模式） | 空（无密码） |
-| `ACCESS_PASSWORDS` | 多用户模式密码映射（格式：`userId:password,userId:password`） | 空 |
+| `ACCESS_PASSWORDS` | 多用户种子（格式：`userId:password,...`），**仅在 `data/users.json` 不存在时导入一次** | 空 |
+| `ADMIN_PASSWORD` | 管理界面密码；未配置时 `/admin` 与 `/api/admin/*` 一律 404 (v1.8.0+) | 空（管理端关闭） |
 | `MIGRATE_DEFAULT_USER` | 迁移单用户数据到指定用户（仅多用户模式首次启动） | 空 |
 | `EXPIRE_HOURS` | 数据过期时间（小时） | `168`（7天） |
 | `MESSAGE_PAGE_SIZE` | 分页加载每页数量 | `30` |
@@ -114,7 +118,7 @@ npm start
 | `FILE_CLEANUP_INTERVAL_MINUTES` | 孤儿文件清理间隔（分钟） | `30` |
 | `SHARE_MAX_EXPIRE_HOURS` | 分享链接最大过期时间（小时） | `168`（7天） |
 
-> **安全说明**：多用户模式下 `GET /api/auth/status` 会在未鉴权情况下返回 userId 列表（供登录页展示用户选择），公开部署时请知悉该设计取舍。
+> **安全说明**：`GET /api/auth/status` 只返回 `{ mode, requirePassword }`，不再暴露用户列表；多用户模式下密码以 scrypt 加盐哈希保存在 `data/users.json`（权限 0600）。
 
 ## 运行模式
 
@@ -124,40 +128,54 @@ npm start
 
 ### 多用户模式
 
-使用 `ACCESS_PASSWORDS` 环境变量设置密码映射：
+用户不再直接来自环境变量，而是保存在 `data/users.json`（唯一真相源）。启动时若该文件不存在，会用 `ACCESS_PASSWORDS` 一次性导入并落盘；此后环境变量被忽略，用户以文件为准。
 
 ```
 ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
 ```
 
-每个用户的数据独立存储在：
-- `data/users/user1/messages.json`
-- `data/users/user1/uploads/`
+用户表里存在至少一个用户时即为多用户模式，登录需要「用户名 + 密码」：
 
-用户输入密码后，系统自动识别用户身份，数据完全隔离。
+- 用户名规则：`^[a-z0-9_-]{1,32}$`，全链路按小写处理，创建后不可改名
+- 密码以 scrypt + 独立 salt 哈希存储，明文不落盘
+- 每个用户的数据独立存储在 `data/users/<userId>/messages.json` 与 `data/users/<userId>/uploads/`
+
+### 管理界面 (v1.8.0+)
+
+设置 `ADMIN_PASSWORD` 后访问 `/admin`，可完成：
+
+- 新建用户（可选是否把单用户遗留数据迁移给该用户）、重置密码、启用/禁用、删除（可选择一并清除数据）
+- 查看每个用户的消息数、收藏数、占用空间与最后活跃时间
+- 查看运行模式、版本、分享数量、过期配置与用户表路径
+
+管理凭证通过 `x-admin-password` 请求头传递，与用户登录体系完全独立；管理操作即时生效，无需重启：
+
+- 重置密码 / 禁用 / 删除后，该用户的在线连接会被立即断开，需重新登录
+- 禁用后登录返回 403，删除最后一个用户会退回单用户模式（需二次确认，且会清理全部分享链接）
 
 ### 从单用户迁移到多用户
 
-如果之前使用单用户模式，切换到多用户模式时：
+两种方式任选：
 
-1. 设置 `MIGRATE_DEFAULT_USER` 指定迁移目标用户
-2. 系统会自动将 `data/messages.json` 和 `data/uploads/` 迁移到目标用户目录
+1. **命令行**：设置 `MIGRATE_DEFAULT_USER` 指定目标用户，启动时自动迁移 `data/messages.json` 与 `data/uploads/`
+2. **管理界面**：首次创建用户时勾选「迁移现有单用户数据」
 
 ```bash
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORDS=user1:pass1,user2:pass2 \
+  -e ADMIN_PASSWORD=your-admin-password \
   -e MIGRATE_DEFAULT_USER=user1 \
   -v web-clipboard-data:/app/data \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 ```
 
-如果不设置 `MIGRATE_DEFAULT_USER`，单用户数据会保留在磁盘但不会被读取。
+如果不做迁移，单用户数据会保留在磁盘但不会被读取。
 
 ## 使用说明
 
-1. **登录访问**：打开网页（无密码模式直接进入；密码模式下可选择登录保持有效时长）。
+1. **登录访问**：打开网页（无密码模式直接进入；单用户模式输入密码，多用户模式输入用户名与密码；可勾选登录保持有效时长）。
 2. **发送文本**：在输入框输入内容，按 Enter 或点击「发送」；支持 Markdown 代码与超链接高亮。
 3. **剪贴板交互**：点击「粘贴」可载入文本，双击「粘贴」可直接发送；未聚焦页面时直接按 `Ctrl/Cmd + V` 自动激活载入。
 4. **发送图片与文件**：点击「粘贴图片」或在输入框直接粘贴截图；点击附件 📎 图标可上传图片、音频、视频或文件。

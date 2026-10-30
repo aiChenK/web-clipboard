@@ -24,7 +24,8 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
   - Dedicated "My Shares" panel to view, copy, or revoke active share links anytime
 - **User Isolation & Access Control**
   - **Multiple Modes**: Support for public password-free mode, single-user password mode, and multi-user isolated mode
-  - **Multi-User Isolation**: Different passwords map directly to independent workspaces with complete data and file isolation
+  - **Multi-User Isolation**: Username + password sign-in maps to an independent workspace with complete data and file isolation
+  - **Admin Console**: Set `ADMIN_PASSWORD` to manage users, reset passwords, enable/disable accounts and inspect storage usage from `/admin`
   - **Session Expiration Control**: Selectable session validity durations (10 minutes to 30 days) with auto-logout upon expiry
 - **Optimized Experience & Maintenance**
   - **PWA Ready**: Installable to desktop or mobile home screens for a fast, native-like app experience
@@ -54,10 +55,11 @@ docker run -d \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 
-# Multi-user mode (Data isolated by password)
+# Multi-user mode (username + password, isolated data)
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3 \
+  -e ADMIN_PASSWORD=your-admin-password \
   -v web-clipboard-data:/app/data \
   --name web-clipboard \
   aichenk/web-clipboard:latest
@@ -75,8 +77,9 @@ services:
     environment:
       # Single-user mode
       - ACCESS_PASSWORD=your_password
-      # Multi-user mode (uncomment to use)
+      # Multi-user mode (uncomment to use; seeded into users.json on first run only)
       # - ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
+      # - ADMIN_PASSWORD=your-admin-password  # enables the /admin console
       # - MIGRATE_DEFAULT_USER=user1  # Migrate single-user data to a specified user
       - EXPIRE_HOURS=168
       - FILE_CLEANUP_INTERVAL_MINUTES=30
@@ -104,7 +107,8 @@ npm start
 |------|------|--------|
 | `PORT` | Service port | `3000` |
 | `ACCESS_PASSWORD` | Single-user mode access password (leave empty for password-free mode) | Empty (No password) |
-| `ACCESS_PASSWORDS` | Multi-user mode password mapping (Format: `userId:password,userId:password`) | Empty |
+| `ACCESS_PASSWORDS` | Multi-user seed (Format: `userId:password,...`), imported **only once** when `data/users.json` does not exist | Empty |
+| `ADMIN_PASSWORD` | Admin console password; when unset, `/admin` and `/api/admin/*` return 404 (v1.8.0+) | Empty (console disabled) |
 | `MIGRATE_DEFAULT_USER` | Migrate single-user data to a specified user (only on multi-user mode first run) | Empty |
 | `EXPIRE_HOURS` | Data expiration time (hours) | `168` (7 days) |
 | `MESSAGE_PAGE_SIZE` | Messages loaded per page | `30` |
@@ -121,40 +125,54 @@ Set a password using the `ACCESS_PASSWORD` environment variable. Data is stored 
 
 ### Multi-user Mode
 
-Set user password mapping using the `ACCESS_PASSWORDS` environment variable:
+Users are no longer read from environment variables at runtime; they live in `data/users.json` (the single source of truth). On first start the file is seeded once from `ACCESS_PASSWORDS` and written to disk; afterwards the environment variable is ignored.
 
 ```
 ACCESS_PASSWORDS=user1:pass1,user2:pass2,user3:pass3
 ```
 
-Each user's data is stored independently in:
-- `data/users/user1/messages.json`
-- `data/users/user1/uploads/`
+The instance runs in multi-user mode as long as the user table is non-empty. Sign-in requires **username + password**:
 
-After users enter their password, the system automatically identifies the user, and data is completely isolated.
+- Username rules: `^[a-z0-9_-]{1,32}$`, normalized to lowercase everywhere, immutable after creation
+- Passwords are stored as scrypt hashes with per-user salts — never in plaintext
+- Each user's data lives in `data/users/<userId>/messages.json` and `data/users/<userId>/uploads/`
+
+### Admin Console (v1.8.0+)
+
+Set `ADMIN_PASSWORD` and open `/admin` to:
+
+- Create users (optionally migrating leftover single-user data to the new user), reset passwords, enable/disable, delete (optionally purging data)
+- Inspect per-user message count, favorites, storage usage and last activity
+- Inspect run mode, version, share count, expiration settings and the user-table path
+
+Admin credentials travel in the `x-admin-password` header and are fully independent from user login. Changes take effect immediately without a restart:
+
+- Password reset / disable / delete immediately drops that user's live connections
+- A disabled account gets 403 on login; deleting the last user falls back to single-user mode (requires explicit confirmation and clears all share links)
 
 ### Migration from Single-user to Multi-user
 
-If you previously used single-user mode and are switching to multi-user mode:
+Two options:
 
-1. Set `MIGRATE_DEFAULT_USER` to specify the target migration user.
-2. The system will automatically migrate `data/messages.json` and `data/uploads/` to the target user's directory.
+1. **CLI**: set `MIGRATE_DEFAULT_USER`; `data/messages.json` and `data/uploads/` are migrated at startup
+2. **Admin console**: tick "migrate existing single-user data" when creating the first user
 
 ```bash
 docker run -d \
   -p 3000:3000 \
   -e ACCESS_PASSWORDS=user1:pass1,user2:pass2 \
+  -e ADMIN_PASSWORD=your-admin-password \
   -e MIGRATE_DEFAULT_USER=user1 \
   -v web-clipboard-data:/app/data \
   --name web-clipboard \
   aichenk/web-clipboard:latest
 ```
 
-If `MIGRATE_DEFAULT_USER` is not set, single-user data will remain on disk but will not be read.
+Without migration, single-user data stays on disk but is never read.
 
 ## Usage Instructions
 
-1. **Access / Login**: Open the page (instant entry in password-free mode; choose session expiration duration in password mode).
+1. **Access / Login**: Open the page (instant entry in password-free mode; single-user mode asks for a password, multi-user mode asks for username + password; session expiration duration is configurable).
 2. **Send Text**: Type in the input box, press Enter or click "Send"; supports markdown code and link highlighting.
 3. **Clipboard Interaction**: Click "Paste" to load text, double-click "Paste" to send immediately; press `Ctrl/Cmd + V` on an inactive window to auto-focus and load clipboard contents.
 4. **Send Images & Files**: Click "Paste Image" or paste screenshots directly; click the attachment 📎 icon to upload images, audio, video, or files.

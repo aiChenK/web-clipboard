@@ -1,4 +1,5 @@
-const { MULTI_USER_MODE, ACCESS_PASSWORD, SOCKET_SYNC_LIMIT, userPasswordMap } = require('./config');
+const { ACCESS_PASSWORD, SOCKET_SYNC_LIMIT } = require('./config');
+const { isMultiUserMode, authenticate } = require('./users');
 const { getMessagesPage } = require('./storage');
 const { toPublicMessage } = require('./message');
 const { timingSafeCompare } = require('./utils');
@@ -36,19 +37,7 @@ function recordHandshakeFailure(key) {
   entry.count += 1;
 }
 
-// 多用户模式下以常量时间遍历比对全部口令，防止时序侧信道
-function matchMultiUserPassword(password) {
-  let matchedUserId = null;
-  for (const [validPassword, mappedUser] of userPasswordMap.entries()) {
-    if (timingSafeCompare(password, validPassword)) {
-      matchedUserId = mappedUser;
-      break;
-    }
-  }
-  return matchedUserId;
-}
-
-// Socket.io 广播辅助对象
+// Socket.io 广播辅助对象（userId 为空即单用户模式，广播给所有连接）
 const socketHelper = {
   io: null,
 
@@ -59,7 +48,7 @@ const socketHelper = {
 
   // 广播新消息
   broadcastMessage(userId, message) {
-    if (MULTI_USER_MODE && userId) {
+    if (userId) {
       this.io.to(userId).emit('message-new', message);
     } else {
       this.io.emit('message-new', message);
@@ -68,7 +57,7 @@ const socketHelper = {
 
   // 广播删除消息
   broadcastDelete(userId, messageId) {
-    if (MULTI_USER_MODE && userId) {
+    if (userId) {
       this.io.to(userId).emit('message-delete', messageId);
     } else {
       this.io.emit('message-delete', messageId);
@@ -77,7 +66,7 @@ const socketHelper = {
 
   // 广播清空消息
   broadcastClear(userId, data) {
-    if (MULTI_USER_MODE && userId) {
+    if (userId) {
       this.io.to(userId).emit('messages-clear', data);
     } else {
       this.io.emit('messages-clear', data);
@@ -86,7 +75,7 @@ const socketHelper = {
 
   // 广播收藏状态变更
   broadcastFavorite(userId, data) {
-    if (MULTI_USER_MODE && userId) {
+    if (userId) {
       this.io.to(userId).emit('message-favorite', data);
     } else {
       this.io.emit('message-favorite', data);
@@ -95,11 +84,17 @@ const socketHelper = {
 
   // 广播备注变更
   broadcastRemark(userId, data) {
-    if (MULTI_USER_MODE && userId) {
+    if (userId) {
       this.io.to(userId).emit('message-remark', data);
     } else {
       this.io.emit('message-remark', data);
     }
+  },
+
+  // 踢下线指定用户的全部连接（禁用 / 删除 / 重置密码后调用）
+  disconnectUser(userId) {
+    if (!this.io || !userId) return;
+    this.io.in(userId).disconnectSockets(true);
   }
 };
 
@@ -116,22 +111,25 @@ function setupSocket(io) {
       return next(new Error('Authentication error: too many attempts, please retry later'));
     }
 
-    if (MULTI_USER_MODE) {
+    if (isMultiUserMode()) {
+      if (!userId) {
+        recordHandshakeFailure(sourceKey);
+        return next(new Error('Authentication error: username required'));
+      }
+
       if (!password) {
         recordHandshakeFailure(sourceKey);
         return next(new Error('Authentication error: password required'));
       }
-      const matchedUserId = matchMultiUserPassword(password);
-      if (!matchedUserId) {
+
+      const result = authenticate(userId, password);
+      if (!result.ok) {
         recordHandshakeFailure(sourceKey);
-        return next(new Error('Authentication error: invalid password'));
+        return next(new Error('Authentication error: invalid credentials'));
       }
-      if (userId && matchedUserId !== userId) {
-        recordHandshakeFailure(sourceKey);
-        return next(new Error('Authentication error: userId mismatch'));
-      }
+
       // 将认证通过的 userId 绑定至 socket 实例上
-      socket.userId = matchedUserId;
+      socket.userId = result.user.id;
       handshakeFailures.delete(sourceKey);
       return next();
     }
@@ -151,7 +149,7 @@ function setupSocket(io) {
   io.on('connection', (socket) => {
     console.log('用户连接:', socket.id, '绑定用户ID:', socket.userId);
 
-    if (MULTI_USER_MODE) {
+    if (socket.userId) {
       socket.on('join', (userId) => {
         // 安全防御：只能加入经由认证绑定到该 Socket 实例的自身房间
         if (userId && userId === socket.userId) {
