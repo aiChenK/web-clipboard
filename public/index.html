@@ -6,21 +6,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.8.0">
+  <link rel="stylesheet" href="style.css?v=1.8.1">
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#1a1a1a">
+  <meta name="theme-color" content="#f3f2ee">
   <link rel="apple-touch-icon" href="/favicon.svg">
 </head>
 
 <body>
   <div class="container">
     <header>
-      <h1>📋 Web Clipboard</h1>
-      <p class="subtitle">跨设备剪贴板同步工具 <span id="version" class="version-badge"></span></p>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">WC</span>
+        <div class="brand-text">
+          <h1>Web Clipboard</h1>
+          <p class="subtitle">跨设备剪贴板同步工具</p>
+        </div>
+      </div>
+      <div class="header-side">
+        <span class="header-rule" aria-hidden="true"></span>
+        <span id="version" class="version-badge">v1.8.1</span>
+      </div>
     </header>
 
     <div id="auth-section" class="section">
       <div class="auth-form">
+        <span class="eyebrow">Access · 访问</span>
         <h2 id="auth-title">请输入访问密码</h2>
         <input type="text" id="username-input" class="hidden" placeholder="用户名" autocomplete="username"
           autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -48,8 +58,14 @@
 
     <div id="chat-section" class="section hidden">
       <div class="tabs">
-        <button class="tab active" data-tab="messages">消息</button>
-        <button class="tab" data-tab="favorites">收藏</button>
+        <button class="tab active" data-tab="messages">
+          <span class="tab-label">消息</span>
+          <span id="tab-count-messages" class="tab-count">0</span>
+        </button>
+        <button class="tab" data-tab="favorites">
+          <span class="tab-label">收藏</span>
+          <span id="tab-count-favorites" class="tab-count">0</span>
+        </button>
       </div>
 
       <div id="search-bar-panel" class="search-bar-panel">
@@ -109,8 +125,6 @@
                   <button id="upload-progress-cancel" class="upload-progress-cancel">取消</button>
                 </div>
               </div>
-              <button id="paste-image" class="btn btn-small btn-secondary">粘贴图片</button>
-              <button id="clear-all" class="btn btn-small btn-danger">清空全部</button>
             </div>
           </div>
         </div>
@@ -130,8 +144,11 @@
           <span id="message-count">0 条消息</span>
         </div>
         <div class="status-bar-right">
-          <button id="clear-cache-btn" class="btn btn-small btn-secondary" type="button" title="查看并清理本地图片缓存">清理缓存</button>
-          <button id="my-shares-btn" class="btn btn-small btn-secondary" type="button">我的分享</button>
+          <button id="clear-cache-btn" class="btn btn-small btn-secondary" type="button" data-short="缓存"
+            title="查看并清理本地图片缓存">清理缓存</button>
+          <button id="clear-all" class="btn btn-small btn-danger" type="button" data-short="清空"
+            title="清空未收藏的消息">清空未收藏</button>
+          <button id="my-shares-btn" class="btn btn-small btn-secondary" type="button" data-short="分享">我的分享</button>
           <button id="logout-btn" class="btn btn-small btn-secondary" type="button">退出</button>
         </div>
       </div>
@@ -142,7 +159,7 @@
 
   <div id="confirm-modal" class="modal hidden">
     <div class="modal-content confirm-modal-content">
-      <p id="modal-message">确定要清空所有消息吗？</p>
+      <p id="modal-message">确定要清空未收藏的消息吗？</p>
       <p id="modal-hint" class="modal-hint hidden"></p>
       <div class="modal-actions">
         <button id="modal-cancel" class="btn btn-secondary">取消</button>
@@ -260,9 +277,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.8.0"></script>
-  <script src="cache.js?v=1.8.0"></script>
-  <script type="module" src="app.js?v=1.8.0"></script>
+  <script src="utils.js?v=1.8.1"></script>
+  <script src="cache.js?v=1.8.1"></script>
+  <script type="module" src="app.js?v=1.8.1"></script>
 </body>
 
 </html>

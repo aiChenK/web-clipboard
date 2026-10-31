@@ -67,7 +67,6 @@ const sendTextBtn = document.getElementById('send-text');
 const pasteTextBtn = document.getElementById('paste-text');
 const imageInput = document.getElementById('image-input');
 const fileInput = document.getElementById('file-input');
-const pasteImageBtn = document.getElementById('paste-image');
 const clearAllBtn = document.getElementById('clear-all');
 const logoutBtn = document.getElementById('logout-btn');
 const clearCacheBtn = document.getElementById('clear-cache-btn');
@@ -78,6 +77,8 @@ const expireInfo = document.getElementById('expire-info');
 const toastEl = document.getElementById('toast');
 const imageProcessingState = document.getElementById('image-processing-state');
 const tabs = document.querySelectorAll('.tab');
+const tabCountMessages = document.getElementById('tab-count-messages');
+const tabCountFavorites = document.getElementById('tab-count-favorites');
 const dropZone = document.getElementById('drop-zone');
 const dropOverlay = document.getElementById('drop-overlay');
 
@@ -212,16 +213,38 @@ function revokeBlobUrls(container) {
 }
 
 // ========== 消息列表渲染与 DOM 更新 ==========
+function formatTabCount(value) {
+  const n = Number(value) || 0;
+  return n > 999 ? '999+' : String(n);
+}
+
+function updateTabCounts() {
+  if (tabCountMessages) tabCountMessages.textContent = formatTabCount(state.totalMessages);
+  if (tabCountFavorites) tabCountFavorites.textContent = formatTabCount(state.totalFavorites);
+}
+
 function updateMessageCount() {
   if (messageCount) {
     if (state.isSearchActive) {
       const total = Number.isFinite(state.searchTotal) ? state.searchTotal : state.messages.length;
       messageCount.textContent = `筛选结果: ${state.messages.length}/${total} 条`;
     } else {
-      messageCount.textContent = `${state.messages.length} 条消息`;
+      // 分页只加载了最近一页，状态栏与标签页计数都用服务端总数，避免显示「已加载条数」
+      messageCount.textContent = `${state.totalMessages || state.messages.length} 条消息`;
     }
   }
-  if (clearAllBtn) clearAllBtn.disabled = state.messages.length === 0;
+  if (clearAllBtn) {
+    // 清空只作用于未收藏消息，用服务端总数计算，避免分页只加载一页时误判；
+    // 未收藏数为 0 时禁用，杜绝「点了没反应」的空点击
+    const favoriteTotal = state.totalFavorites || 0;
+    const clearableCount = Math.max(0, (state.totalMessages || 0) - favoriteTotal);
+    clearAllBtn.disabled = clearableCount === 0;
+    clearAllBtn.title =
+      clearableCount > 0
+        ? `将删除 ${clearableCount} 条未收藏消息，保留 ${favoriteTotal} 条收藏`
+        : '没有可清空的未收藏消息';
+  }
+  updateTabCounts();
 }
 
 function renderLoadingState() {
@@ -316,8 +339,19 @@ function removeSingleMessage(id) {
   removeFromContainer(messagesList);
   removeFromContainer(favoritesList);
 
+  // 删除会同时经本端调用与 socket 广播到达，第二次已无此消息，据此保证计数只减一次
+  const removedMsg = state.messages.find((m) => m.id === id) || state.favorites.find((f) => f.id === id);
+  const wasFavorite = removedMsg
+    ? Boolean(removedMsg.favorite) || Boolean(state.favorites.find((f) => f.id === id))
+    : false;
+
   state.messages = state.messages.filter((m) => m.id !== id);
   state.favorites = state.favorites.filter((m) => m.id !== id);
+
+  if (removedMsg) {
+    state.totalMessages = Math.max(state.totalMessages - 1, 0);
+    if (wasFavorite) state.totalFavorites = Math.max(state.totalFavorites - 1, 0);
+  }
 
   if (state.currentTab === 'favorites') {
     renderFavorites();
@@ -355,7 +389,15 @@ function updateSingleMessageFavorite(id, favorite, updatedMessage = null) {
 
   // 2. 同步更新 state.messages 中的对应项
   const msg = state.messages.find((m) => m.id === id);
+  // 先记录变更前的收藏状态，用于幂等地维护收藏总数（本端操作与 socket 广播都会走到这里）
+  const wasFavorite = msg
+    ? Boolean(msg.favorite)
+    : Boolean(state.favorites.find((f) => f.id === id));
   if (msg) msg.favorite = favorite;
+  if (wasFavorite !== Boolean(favorite)) {
+    state.totalFavorites = Math.max(state.totalFavorites + (favorite ? 1 : -1), 0);
+    updateTabCounts();
+  }
 
   // 3. 同步维护 state.favorites 列表
   if (favorite) {
@@ -459,6 +501,10 @@ async function loadFavorites() {
     });
     state.favorites = data.messages || [];
     state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
+    if (!hasActiveFilter()) {
+      state.totalFavorites = state.searchTotal;
+      updateTabCounts();
+    }
     updateSearchResultCount();
     if (state.currentTab === 'favorites') {
       renderFavorites();
@@ -509,6 +555,11 @@ async function loadInitialMessages() {
     state.messages = data.messages || [];
     state.hasMoreMessages = Boolean(data.hasMore);
     state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
+    // 无筛选时 data.total 即消息总数，标签页计数以它为准（分页不影响）
+    if (!hasActiveFilter()) {
+      state.totalMessages = state.searchTotal;
+      updateTabCounts();
+    }
     updateSearchResultCount();
 
     if (data.expireHours && expireInfo) {
@@ -745,6 +796,7 @@ async function processUploadQueue() {
       const exists = state.messages.some((m) => m.id === res.message.id);
       if (!exists) {
         state.messages.push(res.message);
+        state.totalMessages += 1;
         appendSingleMessage(res.message);
       }
     }
@@ -853,6 +905,7 @@ async function handleSendText() {
     const exists = state.messages.some((m) => m.id === res.message.id);
     if (!exists) {
       state.messages.push(res.message);
+      state.totalMessages += 1;
       appendSingleMessage(res.message);
     }
   } catch (err) {
@@ -1153,13 +1206,22 @@ tabs.forEach((tab) => {
 // ========== 清空未收藏消息 ==========
 if (clearAllBtn) {
   clearAllBtn.addEventListener('click', () => {
+    // 把「会删多少、留多少」写进确认文案，让用户在点确定前就完成预判
+    const favoriteTotal = state.totalFavorites || 0;
+    const clearableCount = Math.max(0, (state.totalMessages || 0) - favoriteTotal);
     showConfirmModal(
-      '确定要清空所有未收藏的消息吗？',
+      clearableCount > 0
+        ? `确定要清空未收藏的消息吗？\n将删除 ${clearableCount} 条消息，保留 ${favoriteTotal} 条收藏。`
+        : '确定要清空未收藏的消息吗？',
       async () => {
         try {
           const res = await apiClearAll();
           state.messages = state.messages.filter((m) => m.favorite);
           state.hasMoreMessages = false;
+          // 清空后仅剩收藏消息，标签页两个计数都收敛到收藏数
+          const kept = res && Number.isFinite(res.favoriteCount) ? res.favoriteCount : state.favorites.length;
+          state.totalMessages = kept;
+          state.totalFavorites = kept;
           renderMessages();
           if (state.currentTab === 'favorites') renderFavorites();
 
@@ -1170,14 +1232,14 @@ if (clearAllBtn) {
           if (res && res.favoriteCount > 0) {
             showToast(`已清空，保留 ${res.favoriteCount} 条收藏`);
           } else {
-            showToast('已清空全部消息');
+            showToast('已清空未收藏的消息');
           }
         } catch (err) {
           showToast(err.message || '清空失败');
         }
       },
       {
-        hint: '提示：已收藏的消息和对应图片将被完整保留。'
+        hint: '关联的图片、文件与已创建的分享链接会一并删除，此操作不可撤销。'
       }
     );
   });
@@ -1239,6 +1301,9 @@ function logout(showMessage = true) {
   state.isAuthenticated = false;
   state.messages = [];
   state.favorites = [];
+  state.totalMessages = 0;
+  state.totalFavorites = 0;
+  updateTabCounts();
   state.userId = null;
   state.displayName = '';
 
@@ -1348,6 +1413,8 @@ initSocketConnection({
   onNewMessage: (msg) => {
     const exists = state.messages.some((m) => m.id === msg.id);
     if (!exists) {
+      state.totalMessages += 1;
+      updateTabCounts();
       if (state.isSearchActive) {
         if (!matchesCurrentSearch(msg)) {
           showToast('收到新消息（不符合当前筛选条件）');
@@ -1365,6 +1432,9 @@ initSocketConnection({
   onClearMessages: (data) => {
     state.messages = state.messages.filter((m) => m.favorite);
     state.hasMoreMessages = false;
+    const kept = data && Number.isFinite(data.favoriteCount) ? data.favoriteCount : state.favorites.length;
+    state.totalMessages = kept;
+    state.totalFavorites = kept;
     renderMessages();
     if (state.currentTab === 'favorites') renderFavorites();
     if (window.ImageCache) {
@@ -1395,6 +1465,9 @@ state.on('socket:reconnect', () => {
       .then((data) => {
         state.messages = data.messages || [];
         state.hasMoreMessages = Boolean(data.hasMore);
+        if (Number.isFinite(data.total) && !hasActiveFilter()) {
+          state.totalMessages = data.total;
+        }
         renderMessages();
       })
       .catch((err) => console.error('重连刷新消息失败:', err))

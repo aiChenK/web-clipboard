@@ -161,11 +161,11 @@ body::after {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  color: #fff;
+  color: #f7f6f2;
   font-family: var(--mono);
   font-weight: 700;
   letter-spacing: 0.06em;
-  background: linear-gradient(140deg, #6366f1 0%, #764ba2 100%);
+  background: var(--ink);
 }
 
 .auth-logo {
@@ -173,7 +173,7 @@ body::after {
   height: 46px;
   border-radius: 13px;
   font-size: var(--fs-300);
-  box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3);
+  box-shadow: 0 8px 20px rgba(23, 23, 27, 0.2);
 }
 
 .eyebrow {
@@ -256,7 +256,7 @@ body::after {
   height: 34px;
   border-radius: 10px;
   font-size: var(--fs-100);
-  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.26);
+  box-shadow: 0 4px 12px rgba(23, 23, 27, 0.18);
 }
 
 .brand-text {

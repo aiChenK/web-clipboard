@@ -14,6 +14,10 @@ class StateManager {
     this.messages = [];
     this.favorites = [];
     this.hasMoreMessages = false;
+
+    // 标签页计数（消息为服务端总数，收藏为收藏总数；均由接口 total 维护）
+    this.totalMessages = 0;
+    this.totalFavorites = 0;
     
     this.isInitialLoading = false;
     this.isLoadingOlder = false;

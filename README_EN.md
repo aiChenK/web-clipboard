@@ -15,7 +15,7 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
   - **Images**: Direct paste from clipboard screenshot or multi-image upload, adaptive thumbnails with dynamic original image fetching, and auto-transcoding for HEIC
   - **Audio, Video & Files**: Direct in-card inline playback preview for audio/video media, and easy upload/download for any file format
   - **Message Remarks**: Add and edit multi-line contextual remarks for any message, synced in real-time across devices
-  - **Deep Clipboard Integration**: Shortcut auto-capture when switching windows, and double-click paste button to "paste and send" instantly
+  - **Deep Clipboard Integration**: Press `Ctrl/Cmd + V` anywhere on the page to capture clipboard text or screenshots instantly
 - **Global Search & Filter**
   - Instant fuzzy search across text content, filenames, and remarks with luminous keyword highlighting
   - Category pill filters (All / Text / Image / Video / File) with combined keyword search support
@@ -30,7 +30,8 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
 - **Optimized Experience & Maintenance**
   - **PWA Ready**: Installable to desktop or mobile home screens for a fast, native-like app experience
   - **Local Fast-Open Cache**: IndexedDB smart caching for images, providing instant loading under weak networks with automatic LRU eviction
-  - **Automated Lifecycle**: Auto-cleanup of expired messages and scheduled orphan file removal, with support for single message deletion and one-click clear all
+  - **Automated Lifecycle**: Auto-cleanup of expired messages and scheduled orphan file removal, with support for single message deletion and one-click clearing of unfavorited messages (v1.8.1+)
+  - **Unified Visual Language & Tab Counts**: Paper-and-ink UI across the main app and share page; the Messages / Favorites tabs show live totals (v1.8.1+)
 
 ## Quick Start
 
@@ -174,13 +175,13 @@ Without migration, single-user data stays on disk but is never read.
 
 1. **Access / Login**: Open the page (instant entry in password-free mode; single-user mode asks for a password, multi-user mode asks for username + password; session expiration duration is configurable).
 2. **Send Text**: Type in the input box, press Enter or click "Send"; supports markdown code and link highlighting.
-3. **Clipboard Interaction**: Click "Paste" to load text, double-click "Paste" to send immediately; press `Ctrl/Cmd + V` on an inactive window to auto-focus and load clipboard contents.
-4. **Send Images & Files**: Click "Paste Image" or paste screenshots directly; click the attachment 📎 icon to upload images, audio, video, or files.
+3. **Clipboard Interaction**: Click "Paste" to load clipboard text; press `Ctrl/Cmd + V` anywhere on the page to auto-focus and load the clipboard contents.
+4. **Send Images & Files**: Paste a screenshot directly (`Ctrl/Cmd + V` works anywhere on the page), or click 🖼️ to pick images; click the attachment 📎 icon to upload images, audio, video, or files.
 5. **Media Actions**: Click images to preview full size, copy thumbnails or original images with one click; audio/video can be played inline within cards.
 6. **Search & Filter**: Type keywords in the top search bar for instant search, or click category pills (Text/Image/Video/File) to browse.
 7. **Message Remarks**: Click "Remark" on a card to add or edit notes with instant multi-device sync.
 8. **Share Messages**: Click "Share" to create a link with optional passwords and expiration; manage them in "My Shares".
-9. **Manage & Logout**: Hover over message cards to delete; click "Clear" to clear all history; click "Logout" to sign out and clear saved credentials.
+9. **Manage & Logout**: Hover over message cards to delete a single message; click "Clear Unfavorited" in the footer to clear history (favorites are kept, and the confirmation dialog states how many will be deleted and kept); click "Logout" to sign out and clear saved credentials.
 
 ## Risk Warning for Sharing Feature
 
