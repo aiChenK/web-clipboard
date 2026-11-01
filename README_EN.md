@@ -32,6 +32,7 @@ A cross-device clipboard synchronization tool supporting real-time synchronizati
   - **Local Fast-Open Cache**: IndexedDB smart caching for images, providing instant loading under weak networks with automatic LRU eviction
   - **Automated Lifecycle**: Auto-cleanup of expired messages and scheduled orphan file removal, with support for single message deletion and one-click clearing of unfavorited messages (v1.8.1+)
   - **Unified Visual Language & Tab Counts**: Paper-and-ink UI across the main app and share page; the Messages / Favorites tabs show live totals (v1.8.1+)
+  - **Dark Mode**: One-click toggle in the header (floating button on the share page); follows the system `prefers-color-scheme` by default, remembers the choice locally and syncs it across tabs; all dark-mode text keeps a ≥ 4.5:1 contrast ratio (v1.8.2+)
 
 ## Quick Start
 

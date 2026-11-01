@@ -7,13 +7,19 @@
   <meta name="robots" content="noindex, nofollow">
   <title>Web Clipboard - 用户管理</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/admin.css?v=1.8.1">
+  <meta name="theme-color" content="#f3f2ee">
+  <link rel="stylesheet" href="/admin.css?v=1.8.2">
+  <!-- 主题引导：绘制前同步执行，避免深色用户首屏闪白 -->
+  <script src="/theme.js?v=1.8.2"></script>
 </head>
 
 <body>
   <div class="shell">
     <!-- 登录 -->
     <section id="login-view" class="login-wrap">
+      <!-- 登录页还没有顶栏，主题开关先浮在右上角；登录后随本区块一起隐藏 -->
+      <button type="button" class="theme-toggle float" data-theme-toggle aria-pressed="false"
+        aria-label="切换到深色模式" title="切换到深色模式"></button>
       <div class="card auth-card">
         <div class="auth-brand">
           <div class="auth-logo" aria-hidden="true">WC</div>
@@ -57,6 +63,8 @@
             <span id="version-badge" class="badge">-</span>
           </div>
           <div class="topbar-actions">
+            <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
+              aria-label="切换到深色模式" title="切换到深色模式"></button>
             <button id="refresh-btn" class="btn btn-secondary btn-small">刷新数据</button>
             <button id="logout-btn" class="btn btn-ghost btn-small">退出</button>
           </div>
@@ -197,7 +205,7 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="/admin.js?v=1.8.1"></script>
+  <script src="/admin.js?v=1.8.2"></script>
 </body>
 
 </html>

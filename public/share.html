@@ -5,9 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>分享消息 - Web Clipboard</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="/style.css">
+  <meta name="theme-color" content="#f3f2ee">
+  <link rel="stylesheet" href="/style.css?v=1.8.2">
+  <!-- 主题引导：绘制前同步执行，避免深色用户首屏闪白 -->
+  <script src="/theme.js?v=1.8.2"></script>
 </head>
 <body>
+  <!-- 分享页是公开页，主题开关浮在右上角，不占用卡片布局 -->
+  <button type="button" class="theme-toggle float" data-theme-toggle aria-pressed="false"
+    aria-label="切换到深色模式" title="切换到深色模式"></button>
+
   <div class="share-page">
     <div class="share-card" id="share-card">
       <div class="share-header">

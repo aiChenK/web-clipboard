@@ -176,7 +176,8 @@ export function createMessageElement(msg, {
       copyThumbBtn.addEventListener('click', () => {
         copyImageToClipboard(imageData.thumbnail, {
           successToast: '缩略图已复制到剪贴板',
-          failureToast: '复制缩略图失败'
+          failureToast: '复制缩略图失败',
+          messageId: msg.id
         }, onToast);
       });
 
@@ -193,7 +194,8 @@ export function createMessageElement(msg, {
       copyImageBtn.addEventListener('click', () => {
         copyImageToClipboard(imageData.thumbnail, {
           successToast: '图片已复制到剪贴板',
-          failureToast: '复制图片失败'
+          failureToast: '复制图片失败',
+          messageId: msg.id
         }, onToast);
       });
       actionsEl.appendChild(copyImageBtn);

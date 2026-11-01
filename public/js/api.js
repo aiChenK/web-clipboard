@@ -176,6 +176,19 @@ export async function fetchOriginalImageBlob(id, signal) {
   return blob;
 }
 
+// 获取上传资源（缩略图等）流式二进制，必须带凭证头：<img> 原生加载无法携带 x-access-password
+export async function fetchUploadBlob(url, signal) {
+  const response = await authFetch(url, { method: 'GET', signal });
+  if (!response.ok) {
+    throw new Error(`获取图片失败: ${response.status}`);
+  }
+  const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('无效的图片数据');
+  }
+  return blob;
+}
+
 // 切换收藏状态
 export async function toggleFavorite(id, isFavorite = true) {
   const params = new URLSearchParams();

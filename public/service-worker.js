@@ -1,10 +1,11 @@
 // 缓存版本号与 package.json 发布版本及 index.html 静态资源 ?v= 同步更新
-const CACHE_NAME = 'web-clipboard-v1.8.1';
+const CACHE_NAME = 'web-clipboard-v1.8.2';
 const ASSETS = [
   '/',
   '/index.html',
   '/share.html',
   '/style.css',
+  '/theme.js',
   '/utils.js',
   '/cache.js',
   '/app.js',

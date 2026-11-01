@@ -6,9 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.8.1">
+  <link rel="stylesheet" href="style.css?v=1.8.2">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f3f2ee">
+  <!-- 主题引导：必须在样式之后、绘制之前同步执行，否则深色用户会看到首屏闪白 -->
+  <script src="theme.js?v=1.8.2"></script>
   <link rel="apple-touch-icon" href="/favicon.svg">
 </head>
 
@@ -24,7 +26,9 @@
       </div>
       <div class="header-side">
         <span class="header-rule" aria-hidden="true"></span>
-        <span id="version" class="version-badge">v1.8.1</span>
+        <span id="version" class="version-badge">v1.8.2</span>
+        <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
+          aria-label="切换到深色模式" title="切换到深色模式"></button>
       </div>
     </header>
 
@@ -277,9 +281,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.8.1"></script>
-  <script src="cache.js?v=1.8.1"></script>
-  <script type="module" src="app.js?v=1.8.1"></script>
+  <script src="utils.js?v=1.8.2"></script>
+  <script src="cache.js?v=1.8.2"></script>
+  <script type="module" src="app.js?v=1.8.2"></script>
 </body>
 
 </html>

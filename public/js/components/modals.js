@@ -107,7 +107,8 @@ export class ImageViewerModal {
     const successToast = this.isViewingOriginal ? '原图已复制到剪贴板' : '图片已复制到剪贴板';
     await copyImageToClipboard(src, {
       successToast,
-      failureToast: '复制图片失败'
+      failureToast: '复制图片失败',
+      messageId: this.currentMessage ? this.currentMessage.id : null
     }, this.onToast);
   }
 }

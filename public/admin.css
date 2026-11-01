@@ -30,6 +30,32 @@
   --ok-soft: #ecfdf3;
   --ok-line: #abefc6;
 
+  /* 界面细节色：全部走令牌，深色主题只需覆盖一次 */
+  --accent-lite: #7c6df0;
+  --accent-wash: rgba(79, 70, 229, 0.055);
+  --accent-line: rgba(79, 70, 229, 0.28);
+  --accent-glow: rgba(79, 70, 229, 0.35);
+  --line-3: rgba(23, 23, 27, 0.28);
+  --line-hover: rgba(23, 23, 27, 0.26);
+  --hover-wash: rgba(23, 23, 27, 0.05);
+  --on-ink: #f7f6f2;
+  --on-accent: #ffffff;
+  --ink-glow: rgba(23, 23, 27, 0.2);
+  --surface-blur: rgba(255, 255, 255, 0.86);
+  --row-hover: #fbfaff;
+  --muted-2: #a5a4ad;
+  --placeholder: #908f9a;
+  --scrim: rgba(20, 20, 26, 0.42);
+  --teal: #0f766e;
+  --teal-soft: #ecfdf9;
+  --teal-line: #a7f3e3;
+  --danger-soft-2: #fee4e2;
+  --glow-1: rgba(79, 70, 229, 0.18);
+  --glow-2: rgba(118, 75, 162, 0.14);
+  --glow-3: rgba(15, 118, 110, 0.08);
+  --grain-opacity: 0.04;
+  --grain-blend: multiply;
+
   /* 字体 */
   --serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
   --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", -apple-system,
@@ -87,6 +113,68 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* ==========================================================================
+   深色主题：与主应用同一套「石墨纸 × 冷靛灯」
+   - 只覆盖语义令牌，组件样式一行都不改
+   - --ink 恒为对比最强的一端，压在其上的文字走 --on-ink，随之翻转
+   ========================================================================== */
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #121218;
+  --surface: #1b1b23;
+  --surface-2: #23232c;
+
+  --ink: #f0eff7;
+  --ink-2: #cccad8;
+  --muted: #9d9bad;
+  --line: rgba(240, 239, 247, 0.1);
+  --line-2: rgba(240, 239, 247, 0.17);
+  --line-3: rgba(240, 239, 247, 0.3);
+
+  --on-ink: #14141b;
+  --on-accent: #16141f;
+
+  --accent: #8b83ff;
+  --accent-deep: #a6a1ff;
+  --accent-lite: #b3adff;
+  --accent-soft: rgba(139, 131, 255, 0.14);
+  --accent-wash: rgba(139, 131, 255, 0.09);
+  --accent-line: rgba(139, 131, 255, 0.42);
+  --accent-glow: rgba(139, 131, 255, 0.36);
+
+  --danger: #ff8b7e;
+  --danger-soft: rgba(255, 139, 126, 0.12);
+  --danger-soft-2: rgba(255, 139, 126, 0.2);
+  --danger-line: rgba(255, 139, 126, 0.34);
+  --ok: #5fd08f;
+  --ok-soft: rgba(95, 208, 143, 0.12);
+  --ok-line: rgba(95, 208, 143, 0.34);
+  --teal: #5eccc0;
+  --teal-soft: rgba(94, 204, 192, 0.12);
+  --teal-line: rgba(94, 204, 192, 0.34);
+
+  --line-hover: rgba(240, 239, 247, 0.28);
+  --hover-wash: rgba(240, 239, 247, 0.07);
+  --ink-glow: rgba(0, 0, 0, 0.5);
+  --surface-blur: rgba(27, 27, 35, 0.86);
+  --row-hover: #26262f;
+  --muted-2: #8b899a;
+  --placeholder: #8b899a;
+  --scrim: rgba(6, 6, 10, 0.68);
+
+  --glow-1: rgba(139, 131, 255, 0.2);
+  --glow-2: rgba(150, 92, 200, 0.16);
+  --glow-3: rgba(20, 150, 140, 0.1);
+  --grain-opacity: 0.05;
+  --grain-blend: screen;
+
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --sh-2: 0 2px 6px rgba(0, 0, 0, 0.36), 0 14px 32px rgba(0, 0, 0, 0.45);
+  --sh-3: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
 /* 氛围层：两团低透明径向色 + 极细颗粒，避免纯色平背景 */
 body::before {
   content: "";
@@ -95,9 +183,9 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(52rem 34rem at 6% -10%, rgba(79, 70, 229, 0.18), transparent 62%),
-    radial-gradient(46rem 30rem at 102% -4%, rgba(118, 75, 162, 0.14), transparent 58%),
-    radial-gradient(44rem 30rem at 50% 118%, rgba(15, 118, 110, 0.08), transparent 60%);
+    radial-gradient(52rem 34rem at 6% -10%, var(--glow-1), transparent 62%),
+    radial-gradient(46rem 30rem at 102% -4%, var(--glow-2), transparent 58%),
+    radial-gradient(44rem 30rem at 50% 118%, var(--glow-3), transparent 60%);
 }
 
 body::after {
@@ -106,8 +194,8 @@ body::after {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.04;
-  mix-blend-mode: multiply;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -127,6 +215,83 @@ body::after {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: var(--r-sm);
+}
+
+/* ==========================================================================
+   主题开关：与主应用同一枚墨印小章（图标由 theme.js 注入）
+   ========================================================================== */
+
+.theme-toggle {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: background var(--t-fast) ease, border-color var(--t-fast) ease,
+    color var(--t-fast) ease, transform var(--t-fast) var(--ease);
+}
+
+.theme-toggle:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+  color: var(--accent-deep);
+}
+
+.theme-toggle:active {
+  transform: scale(0.92);
+}
+
+.theme-toggle .ico {
+  position: absolute;
+  width: 17px;
+  height: 17px;
+  transition: transform 420ms var(--ease), opacity 220ms ease;
+}
+
+.theme-toggle .ico-sun {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+.theme-toggle .ico-moon {
+  opacity: 0;
+  transform: rotate(-80deg) scale(0.5);
+}
+
+[data-theme="dark"] .theme-toggle .ico-sun {
+  opacity: 0;
+  transform: rotate(80deg) scale(0.5);
+}
+
+[data-theme="dark"] .theme-toggle .ico-moon {
+  opacity: 1;
+  transform: rotate(0deg) scale(1);
+}
+
+/* 深色下 Chrome 的自动填充仍是黄底白字，强制改回纸墨配色 */
+[data-theme="dark"] input:-webkit-autofill,
+[data-theme="dark"] input:-webkit-autofill:hover,
+[data-theme="dark"] input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface-2) inset;
+  caret-color: var(--ink);
+}
+
+/* 登录页：浮在右上角，不参与卡片布局 */
+.theme-toggle.float {
+  position: fixed;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  z-index: 30;
+  background: var(--surface);
+  box-shadow: var(--sh-1);
 }
 
 /* ==========================================================================
@@ -161,7 +326,7 @@ body::after {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  color: #f7f6f2;
+  color: var(--on-ink);
   font-family: var(--mono);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -173,7 +338,7 @@ body::after {
   height: 46px;
   border-radius: 13px;
   font-size: var(--fs-300);
-  box-shadow: 0 8px 20px rgba(23, 23, 27, 0.2);
+  box-shadow: 0 8px 20px var(--ink-glow);
 }
 
 .eyebrow {
@@ -237,7 +402,7 @@ body::after {
   gap: var(--sp-5);
   flex-wrap: wrap;
   padding: 13px var(--sp-5);
-  background: rgba(255, 255, 255, 0.86);
+  background: var(--surface-blur);
   backdrop-filter: blur(14px) saturate(1.4);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -256,7 +421,7 @@ body::after {
   height: 34px;
   border-radius: 10px;
   font-size: var(--fs-100);
-  box-shadow: 0 4px 12px rgba(23, 23, 27, 0.18);
+  box-shadow: 0 4px 12px var(--ink-glow);
 }
 
 .brand-text {
@@ -309,14 +474,14 @@ body::after {
 
 .badge.multi {
   background: var(--accent-soft);
-  border-color: rgba(79, 70, 229, 0.28);
+  border-color: var(--accent-line);
   color: var(--accent-deep);
 }
 
 .badge.single {
-  background: #ecfdf9;
-  border-color: #a7f3e3;
-  color: #0f766e;
+  background: var(--teal-soft);
+  border-color: var(--teal-line);
+  color: var(--teal);
 }
 
 .badge.on {
@@ -501,12 +666,12 @@ input[type="password"] {
 }
 
 input::placeholder {
-  color: #908f9a;
+  color: var(--placeholder);
 }
 
 input[type="text"]:hover,
 input[type="password"]:hover {
-  border-color: rgba(23, 23, 27, 0.24);
+  border-color: var(--line-3);
 }
 
 input[type="text"]:focus,
@@ -583,8 +748,8 @@ input[type="password"]:focus {
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
-  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  color: var(--on-accent);
+  box-shadow: 0 1px 2px var(--accent-glow), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -599,7 +764,7 @@ input[type="password"]:focus {
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--surface-2);
-  border-color: rgba(23, 23, 27, 0.26);
+  border-color: var(--line-hover);
 }
 
 .btn-ghost {
@@ -608,7 +773,7 @@ input[type="password"]:focus {
 }
 
 .btn-ghost:hover:not(:disabled) {
-  background: rgba(23, 23, 27, 0.05);
+  background: var(--hover-wash);
   color: var(--ink);
 }
 
@@ -619,7 +784,7 @@ input[type="password"]:focus {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #fee4e2;
+  background: var(--danger-soft-2);
 }
 
 .btn-small {
@@ -678,7 +843,7 @@ tbody tr:last-child td {
 }
 
 tbody tr:hover td {
-  background: #fbfaff;
+  background: var(--row-hover);
 }
 
 tbody tr:hover td:first-child {
@@ -734,7 +899,7 @@ td.cell-actions {
 }
 
 .muted {
-  color: #a5a4ad;
+  color: var(--muted-2);
 }
 
 .empty {
@@ -790,8 +955,8 @@ td.cell-actions {
   z-index: 60;
   padding: 10px 18px;
   border-radius: 10px;
-  background: rgba(23, 23, 27, 0.94);
-  color: #fff;
+  background: var(--ink);
+  color: var(--on-ink);
   font-size: var(--fs-300);
   box-shadow: var(--sh-2);
   opacity: 0;
@@ -817,7 +982,7 @@ td.cell-actions {
   align-items: center;
   justify-content: center;
   padding: var(--sp-5);
-  background: rgba(20, 20, 26, 0.42);
+  background: var(--scrim);
   backdrop-filter: blur(4px);
 }
 
