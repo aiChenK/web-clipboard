@@ -6,11 +6,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.8.2">
+  <link rel="stylesheet" href="style.css?v=1.8.3">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f3f2ee">
   <!-- 主题引导：必须在样式之后、绘制之前同步执行，否则深色用户会看到首屏闪白 -->
-  <script src="theme.js?v=1.8.2"></script>
+  <script src="theme.js?v=1.8.3"></script>
+  <!-- 首屏引导：已有本地凭证时，认证状态需要一次网络确认才可知。
+       在确认前先挂 data-boot="pending" 交出引导态，避免已登录用户
+       先看到登录表单再被切走（无凭证时不挂，登录表单立即渲染） -->
+  <script>
+    (function () {
+      var pending = false;
+      try {
+        pending = Boolean(
+          localStorage.getItem('web-clipboard-password') ||
+          localStorage.getItem('web-clipboard-user-id')
+        );
+      } catch (e) { }
+
+      if (!pending) return;
+      document.documentElement.setAttribute('data-boot', 'pending');
+
+      // 兜底：脚本加载失败或网络极慢时，不要把人永久卡在引导态
+      setTimeout(function () {
+        if (document.documentElement.getAttribute('data-boot') === 'pending') {
+          document.documentElement.setAttribute('data-boot', 'auth');
+        }
+      }, 10000);
+    })();
+  </script>
   <link rel="apple-touch-icon" href="/favicon.svg">
 </head>
 
@@ -26,11 +50,16 @@
       </div>
       <div class="header-side">
         <span class="header-rule" aria-hidden="true"></span>
-        <span id="version" class="version-badge">v1.8.2</span>
+        <span id="version" class="version-badge">v1.8.3</span>
         <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
           aria-label="切换到深色模式" title="切换到深色模式"></button>
       </div>
     </header>
+
+    <div id="boot-screen" class="boot-screen" role="status" aria-live="polite">
+      <p class="boot-text">正在恢复会话…</p>
+      <span class="boot-bar" aria-hidden="true"><span></span></span>
+    </div>
 
     <div id="auth-section" class="section">
       <div class="auth-form">
@@ -281,9 +310,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.8.2"></script>
-  <script src="cache.js?v=1.8.2"></script>
-  <script type="module" src="app.js?v=1.8.2"></script>
+  <script src="utils.js?v=1.8.3"></script>
+  <script src="cache.js?v=1.8.3"></script>
+  <script type="module" src="app.js?v=1.8.3"></script>
 </body>
 
 </html>

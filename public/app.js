@@ -1252,8 +1252,14 @@ function clearStoredCredentials() {
   localStorage.removeItem(STORAGE_KEYS.LOGIN_TIMESTAMP);
 }
 
+// 结束首屏引导态：认证结果已知，交给登录区或主界面自行渲染
+function endBootState() {
+  document.documentElement.removeAttribute('data-boot');
+}
+
 // 渲染登录表单：多用户模式展示用户名 + 密码，单用户模式仅密码
 function showAuthForm() {
+  endBootState();
   const isMulti = state.currentMode === 'multi';
 
   if (authTitle) {
@@ -1332,6 +1338,7 @@ function checkLoginExpiration() {
 
 // ========== 应用登录与初始化流 ==========
 function enterApp() {
+  endBootState();
   if (authSection) authSection.classList.add('hidden');
   if (chatSection) chatSection.classList.remove('hidden');
   state.isAuthenticated = true;
@@ -1504,15 +1511,14 @@ document.addEventListener('keydown', (e) => {
 
 // ========== 初始化启动流 ==========
 async function initApp() {
-  // 检查版本号
-  try {
-    const res = await fetch('/api/version');
-    if (res.ok) {
-      const data = await res.json();
+  // 版本号与认证状态互不依赖，版本号不阻塞首屏判定（串行只会推后登录页/主界面的展示）
+  fetch('/api/version')
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
       const versionEl = document.getElementById('version');
-      if (versionEl && data.version) versionEl.textContent = `v${data.version}`;
-    }
-  } catch {}
+      if (data && data.version && versionEl) versionEl.textContent = `v${data.version}`;
+    })
+    .catch(() => { });
 
   // 检查认证状态
   try {
