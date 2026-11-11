@@ -3,6 +3,7 @@
  */
 
 import { STORAGE_KEYS } from './config.js';
+import { getClientId } from './client.js';
 import { state } from './state.js';
 
 // 统一的带凭证 Fetch 包装器
@@ -97,7 +98,10 @@ export async function sendTextMessage({ content, remark }) {
 
   const response = await authFetch('/api/messages', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-client-id': getClientId()
+    },
     body: JSON.stringify(body)
   });
   const data = await response.json();
@@ -114,6 +118,7 @@ export function uploadMediaWithProgress({ formData, onProgress, onAbortRef }) {
     if (onAbortRef) onAbortRef(xhr);
 
     xhr.open('POST', '/api/messages/upload');
+    xhr.setRequestHeader('x-client-id', getClientId());
 
     const savedPassword = localStorage.getItem(STORAGE_KEYS.PASSWORD);
     const savedUserId = localStorage.getItem(STORAGE_KEYS.USER_ID);

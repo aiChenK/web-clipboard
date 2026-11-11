@@ -10,6 +10,7 @@ import {
 } from './js/config.js';
 
 import { state } from './js/state.js';
+import { getClientId } from './js/client.js';
 
 import {
   authFetch,
@@ -1418,13 +1419,14 @@ initSocketConnection({
     }
   },
   onNewMessage: (msg) => {
+    const isLocalMessage = msg.sourceClientId === getClientId();
     const exists = state.messages.some((m) => m.id === msg.id);
     if (!exists) {
       state.totalMessages += 1;
       updateTabCounts();
       if (state.isSearchActive) {
         if (!matchesCurrentSearch(msg)) {
-          showToast('收到新消息（不符合当前筛选条件）');
+          if (!isLocalMessage) showToast('收到新消息（不符合当前筛选条件）');
           return;
         }
         state.searchTotal = (state.searchTotal || 0) + 1;
@@ -1432,7 +1434,7 @@ initSocketConnection({
       }
       state.messages.push(msg);
       appendSingleMessage(msg);
-      showToast('收到新消息');
+      if (!isLocalMessage) showToast('收到新消息');
     }
   },
   onDeleteMessage: (id) => removeSingleMessage(id),

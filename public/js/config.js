@@ -11,6 +11,7 @@ export const LARGE_IMAGE_THRESHOLD_BYTES = 3 * 1024 * 1024; // 3MB
 export const HD_COMPRESS_MAX_EDGE = 3840;
 
 export const STORAGE_KEYS = {
+  CLIENT_ID: 'web-clipboard-client-id',
   PASSWORD: 'web-clipboard-password',
   USER_ID: 'web-clipboard-user-id',
   DURATION_LIMIT: 'web-clipboard-limit-duration',

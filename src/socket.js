@@ -47,11 +47,13 @@ const socketHelper = {
   },
 
   // 广播新消息
-  broadcastMessage(userId, message) {
+  broadcastMessage(userId, message, sourceClientId) {
+    // 来源标识只用于实时提示，不写入消息存储。
+    const payload = { ...message, sourceClientId };
     if (userId) {
-      this.io.to(userId).emit('message-new', message);
+      this.io.to(userId).emit('message-new', payload);
     } else {
-      this.io.emit('message-new', message);
+      this.io.emit('message-new', payload);
     }
   },
 

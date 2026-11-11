@@ -76,7 +76,7 @@ router.post('/', requireAuth, async (req, res) => {
   const publicMessage = toPublicMessage(message, userId);
 
   // 广播消息（需要通过 app.js 传入 io）
-  req.app.get('io').broadcastMessage(userId, publicMessage);
+  req.app.get('io').broadcastMessage(userId, publicMessage, req.get('x-client-id') || null);
 
   return res.json({ success: true, message: publicMessage });
 });
@@ -203,7 +203,7 @@ router.post('/upload', requireAuth, (req, res, next) => {
 
     const publicMessage = toPublicMessage(message, userId);
 
-    req.app.get('io').broadcastMessage(userId, publicMessage);
+    req.app.get('io').broadcastMessage(userId, publicMessage, req.get('x-client-id') || null);
 
     return res.json({ success: true, message: publicMessage });
   } catch (err) {
