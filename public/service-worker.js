@@ -1,5 +1,5 @@
-// 缓存版本号与 package.json 发布版本及 index.html 静态资源 ?v= 同步更新
-const CACHE_NAME = 'web-clipboard-v1.8.4';
+// 发布版本 + 静态资源修订；升级分组界面时淘汰旧的资源缓存。
+const CACHE_NAME = 'web-clipboard-v1.8.5';
 const ASSETS = [
   '/',
   '/index.html',
@@ -20,6 +20,7 @@ const ASSETS = [
   '/js/media/image-process.js',
   '/js/media/clipboard.js',
   '/js/components/message-item.js',
+  '/js/components/groups.js',
   '/js/components/modals.js',
   '/js/components/share-modal.js'
 ];

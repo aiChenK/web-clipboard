@@ -34,6 +34,8 @@ export function initSocketConnection(callbacks = {}) {
     onClearMessages,
     onFavoriteMessage,
     onRemarkMessage,
+    onGroupsUpdated,
+    onMessageGroup,
     onAuthError
   } = callbacks;
 
@@ -87,6 +89,14 @@ export function initSocketConnection(callbacks = {}) {
   socket.on('message-remark', (data) => {
     if (!state.isAuthenticated) return;
     if (onRemarkMessage) onRemarkMessage(data);
+  });
+
+  socket.on('groups-updated', (data) => {
+    if (state.isAuthenticated && onGroupsUpdated) onGroupsUpdated(data);
+  });
+
+  socket.on('message-group', (message) => {
+    if (state.isAuthenticated && onMessageGroup) onMessageGroup(message);
   });
 
   return socket;

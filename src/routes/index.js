@@ -7,6 +7,7 @@ const { requireAuth } = require('../middleware/auth');
 const authRoutes = require('./auth');
 const messagesRoutes = require('./messages');
 const favoritesRoutes = require('./favorites');
+const groupsRoutes = require('./groups');
 const shareRoutes = require('./share');
 const adminRoutes = require('./admin');
 const { apiLimiter, adminLimiter } = require('../middleware/rateLimit');
@@ -71,6 +72,8 @@ function setupApiRoutes(app) {
 
   // 兼容旧的路由 /api/favorites
   app.use('/api/favorites', apiLimiter, favoritesRoutes);
+
+  app.use('/api/groups', apiLimiter, groupsRoutes);
 
   // 分享路由
   app.use('/api/share', apiLimiter, shareRoutes);

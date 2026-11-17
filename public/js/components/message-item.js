@@ -14,6 +14,7 @@ export function createMessageElement(msg, {
   onOpenRemark,
   onOpenShare,
   onToggleFavorite,
+  onMoveGroup,
   onDelete,
   onToast,
   imageObserver
@@ -322,6 +323,24 @@ export function createMessageElement(msg, {
   remarkBtn.title = msg.remark ? '修改备注' : '添加备注';
   remarkBtn.addEventListener('click', () => onOpenRemark && onOpenRemark(msg));
   actionsEl.appendChild(remarkBtn);
+
+  const groupBtn = document.createElement('button');
+  groupBtn.className = 'btn btn-secondary message-group-action';
+  groupBtn.textContent = `分组：${state.groups.find((group) => group.id === msg.groupId)?.name || '未分组'}`;
+  groupBtn.setAttribute('aria-haspopup', 'menu');
+  groupBtn.setAttribute('aria-controls', 'message-group-menu');
+  groupBtn.setAttribute('aria-expanded', 'false');
+  groupBtn.addEventListener('pointerenter', (event) => {
+    if (event.pointerType === 'mouse' && onMoveGroup) onMoveGroup(msg, groupBtn);
+  });
+  groupBtn.addEventListener('click', () => onMoveGroup && onMoveGroup(msg, groupBtn));
+  groupBtn.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (onMoveGroup) onMoveGroup(msg, groupBtn, true);
+    }
+  });
+  actionsEl.appendChild(groupBtn);
 
   actionsEl.appendChild(favoriteBtn);
   actionsEl.appendChild(deleteBtn);

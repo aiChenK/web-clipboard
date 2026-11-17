@@ -56,10 +56,11 @@ export async function login(userId, password) {
 }
 
 // 分页获取消息列表（支持关键词搜索与分类筛选）
-export async function fetchMessages({ before, limit, keyword, category } = {}) {
+export async function fetchMessages({ before, limit, keyword, category, groupId } = {}) {
   const params = new URLSearchParams();
   if (before) params.set('before', before);
   if (limit) params.set('limit', limit);
+  if (groupId && groupId !== 'all') params.set('groupId', groupId);
   if (keyword) params.set('keyword', keyword);
   if (category && category !== 'all') params.set('category', category);
   if (state.currentMode === 'multi' && state.userId) {
@@ -74,8 +75,9 @@ export async function fetchMessages({ before, limit, keyword, category } = {}) {
 }
 
 // 获取收藏列表（支持关键词搜索与分类筛选）
-export async function fetchFavorites({ keyword, category } = {}) {
+export async function fetchFavorites({ keyword, category, groupId } = {}) {
   const params = new URLSearchParams();
+  if (groupId && groupId !== 'all') params.set('groupId', groupId);
   if (keyword) params.set('keyword', keyword);
   if (category && category !== 'all') params.set('category', category);
   if (state.currentMode === 'multi' && state.userId) {
@@ -90,8 +92,8 @@ export async function fetchFavorites({ keyword, category } = {}) {
 }
 
 // 发送纯文本消息
-export async function sendTextMessage({ content, remark }) {
-  const body = { type: 'text', content, remark };
+export async function sendTextMessage({ content, remark, groupId }) {
+  const body = { type: 'text', content, remark, groupId };
   if (state.currentMode === 'multi' && state.userId) {
     body.userId = state.userId;
   }
@@ -249,8 +251,8 @@ export async function deleteMessage(id) {
 }
 
 // 清空未收藏消息
-export async function clearAllMessages() {
-  const body = {};
+export async function clearAllMessages(groupId) {
+  const body = { groupId };
   if (state.currentMode === 'multi' && state.userId) {
     body.userId = state.userId;
   }
@@ -288,4 +290,39 @@ export async function fetchShareConfig() {
     throw new Error('获取分享配置失败');
   }
   return response.json();
+}
+
+export async function fetchGroups() {
+  const response = await authFetch('/api/groups');
+  if (!response.ok) throw new Error('加载分组失败');
+  return response.json();
+}
+
+export async function saveGroup(id, name) {
+  const response = await authFetch(id ? `/api/groups/${encodeURIComponent(id)}` : '/api/groups', {
+    method: id ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || '保存分组失败');
+  return data;
+}
+
+export async function deleteGroup(id) {
+  const response = await authFetch(`/api/groups/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || '删除分组失败');
+  return data;
+}
+
+export async function moveMessageToGroup(id, groupId) {
+  const response = await authFetch(`/api/messages/${encodeURIComponent(id)}/group`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ groupId })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || '移动消息失败');
+  return data;
 }

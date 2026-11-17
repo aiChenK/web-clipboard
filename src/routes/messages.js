@@ -3,33 +3,44 @@ const fs = require('fs/promises');
 const path = require('path');
 const { EXPIRE_HOURS, TEXT_MESSAGE_MAX_LENGTH } = require('../config');
 const { requireAuth } = require('../middleware/auth');
-const { getUserState, getMessagesPage, schedulePersist } = require('../storage');
+const { getUserState, getMessagesPage, schedulePersist, filterMessages } = require('../storage');
 const { getUploadRoot, getUserUploadRoot } = require('../storage');
 const { uploadMiddleware, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
 const { toPublicMessage, persistImageContent, persistFileContent } = require('../message');
 const { createMessageId, toDateFolder, sanitizeFilename, decodeFilename, extensionFromMime, ensureDir, toPosixPath, normalizeImageIncomingContent, decodeDataUrl } = require('../utils');
 const { deleteSharesByMessageId } = require('../share');
 
+const { getMessageCounts, parseGroupId, validateGroup } = require('../groups');
+
 const router = express.Router();
 
 // 获取消息列表（支持关键词搜索与分类筛选）
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, validateGroup('query', true), (req, res) => {
   const userId = req.userId;
   const before = Number(req.query.before);
   const limit = Number(req.query.limit);
   const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
   const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'all';
-  const page = getMessagesPage({ before, limit, userId, keyword, category });
+  const page = getMessagesPage({ before, limit, userId, keyword, category, groupId: req.groupId });
+
+  const state = getUserState(userId);
+  const scopedMessages = filterMessages(state.messages, { groupId: req.groupId });
+  const counts = getMessageCounts(state);
 
   res.json({
     ...page,
     messages: page.messages.map((msg) => toPublicMessage(msg, userId)),
+    counts,
+    allMessagesTotal: counts.messages,
+    allFavoritesTotal: counts.favorites,
+    totalMessages: scopedMessages.length,
+    totalFavorites: scopedMessages.filter((msg) => msg.favorite).length,
     expireHours: EXPIRE_HOURS
   });
 });
 
 // 创建消息（文本）
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, validateGroup('body'), async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const { type, content } = req.body;
@@ -45,6 +56,7 @@ router.post('/', requireAuth, async (req, res) => {
     type,
     content,
     remark,
+    groupId: req.groupId,
     timestamp: Date.now()
   };
 
@@ -115,6 +127,15 @@ router.post('/upload', requireAuth, (req, res, next) => {
     return res.status(400).json({ error: '不支持的消息类型' });
   }
 
+  let groupId;
+  try {
+    groupId = parseGroupId(req.body.groupId, state.groups);
+  } catch (error) {
+    await fs.unlink(mainFile.path).catch(() => {});
+    if (thumbFile) await fs.unlink(thumbFile.path).catch(() => {});
+    return res.status(400).json({ error: error.message });
+  }
+
   const mainOldPath = mainFile.path;
   const thumbOldPath = thumbFile ? thumbFile.path : null;
 
@@ -176,6 +197,7 @@ router.post('/upload', requireAuth, (req, res, next) => {
       id,
       type,
       content: {},
+      groupId,
       remark,
       timestamp: Date.now()
     };
@@ -316,14 +338,16 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 // 清空消息
-router.post('/clear', requireAuth, async (req, res) => {
+router.post('/clear', requireAuth, validateGroup('body', true), async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
 
-  const favoriteMessages = state.messages.filter((msg) => msg.favorite);
-  const removedMessages = state.messages.filter((msg) => !msg.favorite);
+  const scopedMessages = filterMessages(state.messages, { groupId: req.groupId });
+  const favoriteCount = scopedMessages.filter((msg) => msg.favorite).length;
+  const removedMessages = scopedMessages.filter((msg) => !msg.favorite);
+  const removedIds = new Set(removedMessages.map((msg) => msg.id));
 
-  state.messages = favoriteMessages;
+  state.messages = state.messages.filter((msg) => !removedIds.has(msg.id));
   state.lastActivity = Date.now();
   schedulePersist(userId);
 
@@ -332,9 +356,21 @@ router.post('/clear', requireAuth, async (req, res) => {
   // 删除被清空消息的所有相关分享
   await Promise.allSettled(removedMessages.map((msg) => deleteSharesByMessageId(msg.id, userId)));
 
-  req.app.get('io').broadcastClear(userId, { favoriteCount: favoriteMessages.length });
+  req.app.get('io').broadcastClear(userId, { favoriteCount, groupId: req.groupId, ids: [...removedIds] });
 
-  return res.json({ success: true, favoriteCount: favoriteMessages.length });
+  return res.json({ success: true, favoriteCount, ids: [...removedIds] });
+});
+
+router.patch('/:id/group', requireAuth, validateGroup('body'), (req, res) => {
+  const state = getUserState(req.userId);
+  const message = state.messages.find((item) => item.id === req.params.id);
+  if (!message) return res.status(404).json({ error: '消息不存在' });
+
+  message.groupId = req.groupId;
+  schedulePersist(req.userId);
+  const publicMessage = toPublicMessage(message, req.userId);
+  req.app.get('io').broadcastMessageGroup(req.userId, publicMessage);
+  res.json({ success: true, message: publicMessage });
 });
 
 // 修改消息备注

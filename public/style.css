@@ -756,7 +756,8 @@ html[data-boot="pending"] #chat-section {
 
 .tabs {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  overflow-x: auto;
   gap: 4px;
   flex-shrink: 0;
   padding: 0 var(--sp-4);
@@ -785,12 +786,21 @@ html[data-boot="pending"] #chat-section {
 
 /* 计数：等宽数字挂在标签后，宽度由信息自身撑开 */
 .tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--paper-2);
   font-family: var(--mono);
   font-size: var(--fs-100);
   font-weight: 500;
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
-  color: var(--faint);
+  color: var(--muted);
   transition: color var(--t-fast) ease;
 }
 
@@ -829,6 +839,122 @@ html[data-boot="pending"] #chat-section {
 /* ==========================================================================
    搜索：一条横向查询栏
    ========================================================================== */
+
+.tabs > .tab {
+  flex-shrink: 0;
+}
+
+.group-tabs,
+.group-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.group-tabs:empty {
+  display: none;
+}
+
+.group-tab {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-actions {
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.group-add {
+  font-size: 1.1rem;
+}
+
+.group-tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-add:disabled {
+  color: var(--faint);
+  cursor: not-allowed;
+}
+
+.message-group-menu {
+  position: fixed;
+  inset: auto;
+  width: 200px;
+  margin: 0;
+  padding: 5px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--sh-3);
+  color: var(--ink);
+  overflow-y: auto;
+}
+
+.message-group-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-300);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.message-group-menu button:hover,
+.message-group-menu button:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+}
+
+.message-group-menu button[aria-checked="true"]::after {
+  content: "✓";
+  margin-left: 8px;
+  color: var(--accent);
+}
+
+.group-select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.send-group-hint {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.group-modal-content .group-select {
+  display: block;
+  width: 100%;
+  margin: 10px 0 16px;
+}
+
+.message-actions .message-group-action {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .search-bar-panel {
   display: flex;

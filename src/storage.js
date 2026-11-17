@@ -10,6 +10,7 @@ const userStates = new Map();
 // 全局状态（单用户模式使用）
 const singleUserState = {
   messages: [],
+  groups: [],
   lastActivity: Date.now()
 };
 const dirtyUserIds = new Set();
@@ -54,7 +55,7 @@ function getUserState(userId) {
   }
 
   if (!userStates.has(userId)) {
-    userStates.set(userId, { messages: [], lastActivity: Date.now() });
+    userStates.set(userId, { messages: [], groups: [], lastActivity: Date.now() });
   }
   return userStates.get(userId);
 }
@@ -68,9 +69,13 @@ function dropUserState(userId) {
 // 规范化持久化状态
 function normalizePersistedState(state) {
   if (!state || typeof state !== 'object') {
-    return { messages: [], lastActivity: Date.now() };
+    return { messages: [], groups: [], lastActivity: Date.now() };
   }
 
+  const groups = Array.isArray(state.groups)
+    ? state.groups.filter((group) => group && typeof group.id === 'string' && typeof group.name === 'string')
+    : [];
+  const groupIds = new Set(groups.map((group) => group.id));
   const persistedMessages = Array.isArray(state.messages) ? state.messages : [];
   const normalizedMessages = persistedMessages
     .map((message) => {
@@ -79,6 +84,7 @@ function normalizePersistedState(state) {
       if (typeof message.type !== 'string') return null;
       if (!Number.isFinite(message.timestamp)) return null;
       if (!['text', 'image', 'file'].includes(message.type)) return null;
+      message.groupId = groupIds.has(message.groupId) ? message.groupId : null;
       message.favorite = Boolean(message.favorite);
       message.remark = typeof message.remark === 'string' ? message.remark : '';
       return message;
@@ -91,6 +97,7 @@ function normalizePersistedState(state) {
 
   return {
     messages: normalizedMessages,
+    groups,
     lastActivity: persistedLastActivity
   };
 }
@@ -106,10 +113,12 @@ async function loadPersistedState(userId = null) {
 
     if (!isMultiUserMode()) {
       singleUserState.messages = normalized.messages;
+      singleUserState.groups = normalized.groups;
       singleUserState.lastActivity = normalized.lastActivity;
     } else {
       const state = getUserState(userId);
       state.messages = normalized.messages;
+      state.groups = normalized.groups;
       state.lastActivity = normalized.lastActivity;
     }
 
@@ -122,6 +131,7 @@ async function loadPersistedState(userId = null) {
     console.error('读取持久化数据失败，使用空数据启动:', error);
     if (!isMultiUserMode()) {
       singleUserState.messages = [];
+      singleUserState.groups = [];
       singleUserState.lastActivity = Date.now();
     }
   }
@@ -135,6 +145,7 @@ async function persistState(userId = null) {
   const payload = JSON.stringify(
     {
       messages: state.messages,
+      groups: state.groups,
       lastActivity: state.lastActivity
     },
     null,
@@ -282,26 +293,27 @@ function matchesKeyword(item, keyword) {
 }
 
 // 统一过滤函数
-function filterMessages(messages, { keyword, category } = {}) {
+function filterMessages(messages, { keyword, category, groupId } = {}) {
   const normKeyword = typeof keyword === 'string' ? keyword.trim() : '';
   const normCategory = typeof category === 'string' ? category.trim() : 'all';
 
-  if (!normKeyword && (!normCategory || normCategory === 'all')) {
+  if (groupId === undefined && !normKeyword && (!normCategory || normCategory === 'all')) {
     return messages;
   }
 
   return messages.filter((item) => {
-    return matchesCategory(item, normCategory) && matchesKeyword(item, normKeyword);
+    return (groupId === undefined || item.groupId === groupId)
+      && matchesCategory(item, normCategory) && matchesKeyword(item, normKeyword);
   });
 }
 
 // 获取消息分页
-function getMessagesPage({ before, limit, userId = null, keyword = null, category = null }) {
+function getMessagesPage({ before, limit, userId = null, keyword = null, category = null, groupId }) {
   const state = getUserState(userId);
   const pageLimit = clampPageSize(limit);
   
   // 1. 先进行分类和关键词过滤
-  const filteredMessages = filterMessages(state.messages, { keyword, category });
+  const filteredMessages = filterMessages(state.messages, { keyword, category, groupId });
 
   // 2. 沿用基于时间戳的游标分页（<= 含边界：同毫秒多条消息不会跨页丢失，客户端按 id 去重）
   const source = Number.isFinite(before)

@@ -13,11 +13,15 @@ class StateManager {
     
     this.messages = [];
     this.favorites = [];
+    this.groups = [];
+    this.currentGroup = 'all';
     this.hasMoreMessages = false;
 
-    // 标签页计数（消息为服务端总数，收藏为收藏总数；均由接口 total 维护）
+    // 当前范围计数用于列表与清空，全局计数用于消息 / 收藏入口。
     this.totalMessages = 0;
     this.totalFavorites = 0;
+    this.counts = { messages: 0, favorites: 0, groups: {} };
+    this.maxGroups = 5;
     
     this.isInitialLoading = false;
     this.isLoadingOlder = false;

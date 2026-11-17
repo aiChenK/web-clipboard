@@ -6,11 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.8.4">
+  <link rel="stylesheet" href="style.css?v=1.8.5">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f3f2ee">
   <!-- 主题引导：必须在样式之后、绘制之前同步执行，否则深色用户会看到首屏闪白 -->
-  <script src="theme.js?v=1.8.4"></script>
+  <script src="theme.js?v=1.8.5"></script>
   <!-- 首屏引导：已有本地凭证时，认证状态需要一次网络确认才可知。
        在确认前先挂 data-boot="pending" 交出引导态，避免已登录用户
        先看到登录表单再被切走（无凭证时不挂，登录表单立即渲染） -->
@@ -50,7 +50,7 @@
       </div>
       <div class="header-side">
         <span class="header-rule" aria-hidden="true"></span>
-        <span id="version" class="version-badge">v1.8.4</span>
+        <span id="version" class="version-badge">v1.8.5</span>
         <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
           aria-label="切换到深色模式" title="切换到深色模式"></button>
       </div>
@@ -90,7 +90,7 @@
     </div>
 
     <div id="chat-section" class="section hidden">
-      <div class="tabs">
+      <div class="tabs" aria-label="消息视图">
         <button class="tab active" data-tab="messages">
           <span class="tab-label">消息</span>
           <span id="tab-count-messages" class="tab-count">0</span>
@@ -99,6 +99,12 @@
           <span class="tab-label">收藏</span>
           <span id="tab-count-favorites" class="tab-count">0</span>
         </button>
+        <div id="group-tabs" class="group-tabs"></div>
+        <button id="group-add" class="tab group-add" type="button" title="新建分组" aria-label="新建分组">＋</button>
+        <div id="group-actions" class="group-actions hidden">
+          <button id="group-rename" class="btn btn-small btn-secondary" type="button">重命名</button>
+          <button id="group-delete" class="btn btn-small btn-secondary" type="button">删除分组</button>
+        </div>
       </div>
 
       <div id="search-bar-panel" class="search-bar-panel">
@@ -127,6 +133,7 @@
           <div id="messages-list" class="messages-list"></div>
 
           <div class="input-area" id="drop-zone">
+            <p id="send-group-hint" class="send-group-hint">发送到：未分组 · 收藏后免于自动过期</p>
             <div class="drop-overlay hidden" id="drop-overlay">
               <div class="drop-content">
                 <span class="drop-icon">📁</span>
@@ -189,6 +196,21 @@
   </div>
 
   <div id="toast" class="toast hidden"></div>
+
+  <div id="message-group-menu" class="message-group-menu" popover="manual" role="menu" aria-label="设置消息分组"></div>
+
+  <div id="group-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="group-modal-title">
+    <form id="group-form" class="modal-content group-modal-content">
+      <h3 id="group-modal-title" class="modal-title">新建分组</h3>
+      <label id="group-name-label" for="group-name">分组名称</label>
+      <input id="group-name" class="group-select" maxlength="30" autocomplete="off" required>
+      <p id="group-error" class="error-msg hidden" role="alert"></p>
+      <div class="modal-actions">
+        <button id="group-cancel" class="btn btn-secondary" type="button">取消</button>
+        <button id="group-save" class="btn btn-primary" type="submit">保存</button>
+      </div>
+    </form>
+  </div>
 
   <div id="confirm-modal" class="modal hidden">
     <div class="modal-content confirm-modal-content">
@@ -310,9 +332,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.8.4"></script>
-  <script src="cache.js?v=1.8.4"></script>
-  <script type="module" src="app.js?v=1.8.4"></script>
+  <script src="utils.js?v=1.8.5"></script>
+  <script src="cache.js?v=1.8.5"></script>
+  <script type="module" src="app.js?v=1.8.5"></script>
 </body>
 
 </html>

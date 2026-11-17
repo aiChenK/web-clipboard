@@ -3,23 +3,27 @@ const { requireAuth } = require('../middleware/auth');
 const { getUserState, schedulePersist, filterMessages } = require('../storage');
 const { toPublicMessage } = require('../message');
 
+const { getMessageCounts, validateGroup } = require('../groups');
+
 const router = express.Router();
 
 // 获取收藏列表（支持关键词搜索与分类筛选）
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, validateGroup('query', true), (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
   const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
   const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'all';
 
   let favorites = state.messages.filter((msg) => msg.favorite);
-  if (keyword || (category && category !== 'all')) {
-    favorites = filterMessages(favorites, { keyword, category });
-  }
+  favorites = filterMessages(favorites, { keyword, category, groupId: req.groupId });
 
+  const counts = getMessageCounts(state);
   res.json({
     messages: favorites.map((msg) => toPublicMessage(msg, userId)),
-    total: favorites.length
+    total: favorites.length,
+    counts,
+    allFavoritesTotal: counts.favorites,
+    totalFavorites: filterMessages(state.messages, { groupId: req.groupId }).filter((msg) => msg.favorite).length
   });
 });
 

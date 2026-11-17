@@ -53,6 +53,8 @@ import {
   createMessageElement
 } from './js/components/message-item.js';
 
+import { GroupControls } from './js/components/groups.js';
+
 // ========== DOM 元素引用 ==========
 const authSection = document.getElementById('auth-section');
 const chatSection = document.getElementById('chat-section');
@@ -77,9 +79,7 @@ const messageCount = document.getElementById('message-count');
 const expireInfo = document.getElementById('expire-info');
 const toastEl = document.getElementById('toast');
 const imageProcessingState = document.getElementById('image-processing-state');
-const tabs = document.querySelectorAll('.tab');
-const tabCountMessages = document.getElementById('tab-count-messages');
-const tabCountFavorites = document.getElementById('tab-count-favorites');
+const tabs = document.querySelectorAll('.tab[data-tab]');
 const dropZone = document.getElementById('drop-zone');
 const dropOverlay = document.getElementById('drop-overlay');
 
@@ -214,24 +214,18 @@ function revokeBlobUrls(container) {
 }
 
 // ========== 消息列表渲染与 DOM 更新 ==========
-function formatTabCount(value) {
-  const n = Number(value) || 0;
-  return n > 999 ? '999+' : String(n);
-}
-
 function updateTabCounts() {
-  if (tabCountMessages) tabCountMessages.textContent = formatTabCount(state.totalMessages);
-  if (tabCountFavorites) tabCountFavorites.textContent = formatTabCount(state.totalFavorites);
+  groupControls.updateCounts();
 }
 
 function updateMessageCount() {
   if (messageCount) {
     if (state.isSearchActive) {
-      const total = Number.isFinite(state.searchTotal) ? state.searchTotal : state.messages.length;
-      messageCount.textContent = `筛选结果: ${state.messages.length}/${total} 条`;
+      const list = state.currentTab === 'favorites' ? state.favorites : state.messages;
+      messageCount.textContent = `筛选结果: ${list.length}/${state.searchTotal} 条`;
     } else {
       // 分页只加载了最近一页，状态栏与标签页计数都用服务端总数，避免显示「已加载条数」
-      messageCount.textContent = `${state.totalMessages || state.messages.length} 条消息`;
+      messageCount.textContent = state.currentTab === 'favorites' ? `${state.totalFavorites} 条收藏` : `${state.totalMessages} 条消息`;
     }
   }
   if (clearAllBtn) {
@@ -239,7 +233,7 @@ function updateMessageCount() {
     // 未收藏数为 0 时禁用，杜绝「点了没反应」的空点击
     const favoriteTotal = state.totalFavorites || 0;
     const clearableCount = Math.max(0, (state.totalMessages || 0) - favoriteTotal);
-    clearAllBtn.disabled = clearableCount === 0;
+    clearAllBtn.disabled = state.isInitialLoading || clearableCount === 0;
     clearAllBtn.title =
       clearableCount > 0
         ? `将删除 ${clearableCount} 条未收藏消息，保留 ${favoriteTotal} 条收藏`
@@ -266,6 +260,7 @@ function renderEmptyState() {
 }
 
 function renderMessages({ scrollBottom = false } = {}) {
+  groupControls.closeMoveMenu();
   if (state.isInitialLoading && state.messages.length === 0) {
     renderLoadingState();
     return;
@@ -284,6 +279,7 @@ function renderMessages({ scrollBottom = false } = {}) {
       onOpenImageViewer: (m) => imageViewerModal.open(m),
       onOpenRemark: (m) => remarkModal.open(m),
       onOpenShare: (m) => shareModal.open(m),
+      onMoveGroup: (m, button, focus) => groupControls.openMoveMenu(m, button, focus),
       onToggleFavorite: (id) => handleToggleFavorite(id),
       onDelete: (id) => handleDeleteMessage(id),
       onToast: showToast,
@@ -314,6 +310,7 @@ function appendSingleMessage(msg) {
     onOpenImageViewer: (m) => imageViewerModal.open(m),
     onOpenRemark: (m) => remarkModal.open(m),
     onOpenShare: (m) => shareModal.open(m),
+    onMoveGroup: (m, button, focus) => groupControls.openMoveMenu(m, button, focus),
     onToggleFavorite: (id) => handleToggleFavorite(id),
     onDelete: (id) => handleDeleteMessage(id),
     onToast: showToast,
@@ -403,7 +400,7 @@ function updateSingleMessageFavorite(id, favorite, updatedMessage = null) {
   // 3. 同步维护 state.favorites 列表
   if (favorite) {
     const favMsg = updatedMessage || msg || state.favorites.find((f) => f.id === id);
-    if (favMsg) {
+    if (favMsg && matchesCurrentSearch(favMsg)) {
       const cloned = { ...favMsg, favorite: true };
       const idx = state.favorites.findIndex((f) => f.id === id);
       if (idx !== -1) {
@@ -461,6 +458,7 @@ function updateSingleMessageRemark(id, remark) {
 
 // ========== 收藏标签页 ==========
 function renderFavorites() {
+  groupControls.closeMoveMenu();
   if (!favoritesList) return;
   if (state.favorites.length === 0) {
     revokeBlobUrls(favoritesList);
@@ -482,6 +480,7 @@ function renderFavorites() {
       onOpenImageViewer: (m) => imageViewerModal.open(m),
       onOpenRemark: (m) => remarkModal.open(m),
       onOpenShare: (m) => shareModal.open(m),
+      onMoveGroup: (m, button, focus) => groupControls.openMoveMenu(m, button, focus),
       onToggleFavorite: (id) => handleToggleFavorite(id),
       onDelete: (id) => handleDeleteMessage(id),
       onToast: showToast,
@@ -495,17 +494,19 @@ function renderFavorites() {
 }
 
 async function loadFavorites() {
+  const viewKey = getViewKey();
   try {
     const data = await fetchFavorites({
       keyword: state.searchKeyword,
-      category: state.searchCategory
+      category: state.searchCategory,
+      groupId: state.currentGroup
     });
+    if (!state.isAuthenticated || viewKey !== getViewKey()) return;
     state.favorites = data.messages || [];
-    state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
-    if (!hasActiveFilter()) {
-      state.totalFavorites = state.searchTotal;
-      updateTabCounts();
-    }
+    state.totalFavorites = data.totalFavorites;
+    state.counts = data.counts;
+    if (state.currentTab === 'favorites') state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
+    updateMessageCount();
     updateSearchResultCount();
     if (state.currentTab === 'favorites') {
       renderFavorites();
@@ -525,6 +526,7 @@ async function handleToggleFavorite(id) {
     const res = await apiToggleFavorite(id, newStatus);
     const updatedMsg = res && res.message ? res.message : null;
     updateSingleMessageFavorite(id, newStatus, updatedMsg);
+    await loadFavorites();
     showToast(newStatus ? '已添加收藏' : '已取消收藏');
   } catch (error) {
     showToast('收藏操作失败');
@@ -536,14 +538,60 @@ async function handleDeleteMessage(id) {
   try {
     await apiDeleteMessage(id);
     removeSingleMessage(id);
+    await refreshGroupView({ scrollBottom: false, preserveHistory: true });
     showToast('已删除消息');
   } catch (error) {
     showToast(error.message || '删除消息失败');
   }
 }
 
+const groupControls = new GroupControls({
+  onChange: () => switchTab(state.currentTab, state.currentGroup),
+  onToast: showToast,
+  onConfirm: showConfirmModal
+});
+
+function getViewKey() {
+  return JSON.stringify([state.userId, state.currentGroup, state.searchKeyword, state.searchCategory]);
+}
+
+async function refreshGroupView({ scrollBottom = true, preserveHistory = false } = {}) {
+  if (!state.isAuthenticated) return;
+  await Promise.all([loadInitialMessages({ scrollBottom, preserveHistory }), loadFavorites()]);
+}
+
+async function receiveMessage(message) {
+  if (!state.messages.some((item) => item.id === message.id) && matchesCurrentSearch(message)) {
+    state.messages.push(message);
+    if (state.currentTab === 'messages') state.searchTotal += 1;
+    appendSingleMessage(message);
+    updateSearchResultCount();
+  }
+  const viewKey = getViewKey();
+  try {
+    const data = await fetchMessages({ limit: 1, groupId: state.currentGroup });
+    if (!state.isAuthenticated || viewKey !== getViewKey()) return;
+    state.totalMessages = data.totalMessages;
+    state.totalFavorites = data.totalFavorites;
+    state.counts = data.counts;
+    updateMessageCount();
+  } catch (error) {
+    console.error('刷新消息计数失败:', error);
+  }
+}
+
+function applyClearedMessages(data) {
+  const removedIds = new Set(data.ids);
+  state.messages = state.messages.filter((message) => !removedIds.has(message.id));
+  if (window.ImageCache) {
+    for (const id of removedIds) window.ImageCache.deleteThumbnail(state.userId, id);
+    updateCacheButtonDisplay();
+  }
+}
+
 // ========== 数据加载与分页 ==========
-async function loadInitialMessages() {
+async function loadInitialMessages({ scrollBottom = true, preserveHistory = false } = {}) {
+  const viewKey = getViewKey();
   state.isInitialLoading = true;
   renderMessages();
 
@@ -551,16 +599,23 @@ async function loadInitialMessages() {
     const data = await fetchMessages({
       limit: PAGE_SIZE,
       keyword: state.searchKeyword,
-      category: state.searchCategory
+      category: state.searchCategory,
+      groupId: state.currentGroup
     });
-    state.messages = data.messages || [];
-    state.hasMoreMessages = Boolean(data.hasMore);
-    state.searchTotal = Number.isFinite(data.total) ? data.total : (data.messages ? data.messages.length : 0);
-    // 无筛选时 data.total 即消息总数，标签页计数以它为准（分页不影响）
-    if (!hasActiveFilter()) {
-      state.totalMessages = state.searchTotal;
-      updateTabCounts();
+    if (!state.isAuthenticated || viewKey !== getViewKey()) return;
+    const page = data.messages || [];
+    if (preserveHistory) {
+      const messages = new Map(state.messages.filter(matchesCurrentSearch).map((message) => [message.id, message]));
+      for (const message of page) messages.set(message.id, message);
+      state.messages = [...messages.values()].sort((a, b) => a.timestamp - b.timestamp);
+    } else {
+      state.messages = page;
     }
+    state.totalMessages = data.totalMessages;
+    state.totalFavorites = data.totalFavorites;
+    state.counts = data.counts;
+    if (!preserveHistory) state.hasMoreMessages = Boolean(data.hasMore);
+    if (state.currentTab === 'messages') state.searchTotal = data.total;
     updateSearchResultCount();
 
     if (data.expireHours && expireInfo) {
@@ -572,8 +627,10 @@ async function loadInitialMessages() {
     console.error('加载消息失败:', error);
     showToast('加载消息失败');
   } finally {
-    state.isInitialLoading = false;
-    renderMessages({ scrollBottom: true });
+    if (viewKey === getViewKey()) {
+      state.isInitialLoading = false;
+      renderMessages({ scrollBottom });
+    }
   }
 }
 
@@ -589,6 +646,7 @@ async function loadOlderMessages() {
   state.isLoadingOlder = true;
   topLoadingIndicator.classList.remove('hidden');
 
+  const viewKey = getViewKey();
   const oldestTimestamp = state.messages[0].timestamp;
   const prevScrollHeight = messagesList.scrollHeight;
   const prevScrollTop = messagesList.scrollTop;
@@ -598,9 +656,12 @@ async function loadOlderMessages() {
       before: oldestTimestamp,
       limit: PAGE_SIZE,
       keyword: state.searchKeyword,
-      category: state.searchCategory
+      category: state.searchCategory,
+      groupId: state.currentGroup
     });
-    const olderMessages = data.messages || [];
+    if (!state.isAuthenticated || viewKey !== getViewKey()) return;
+    const existingIds = new Set(state.messages.map((message) => message.id));
+    const olderMessages = (data.messages || []).filter((message) => !existingIds.has(message.id));
     state.hasMoreMessages = Boolean(data.hasMore);
 
     if (olderMessages.length > 0) {
@@ -613,6 +674,7 @@ async function loadOlderMessages() {
           onOpenImageViewer: (m) => imageViewerModal.open(m),
           onOpenRemark: (m) => remarkModal.open(m),
           onOpenShare: (m) => shareModal.open(m),
+          onMoveGroup: (m, button, focus) => groupControls.openMoveMenu(m, button, focus),
           onToggleFavorite: (id) => handleToggleFavorite(id),
           onDelete: (id) => handleDeleteMessage(id),
           onToast: showToast,
@@ -775,6 +837,7 @@ async function processUploadQueue() {
 
     const formData = new FormData();
     formData.append('type', item.type);
+    formData.append('groupId', item.groupId || '');
     formData.append('file', item.file, item.filename);
     if (item.thumbnailBlob) {
       formData.append('thumbnail', item.thumbnailBlob, `thumb-${item.filename}.webp`);
@@ -792,15 +855,7 @@ async function processUploadQueue() {
       onAbortRef: (xhr) => { state.currentXhr = xhr; }
     });
 
-    if (res && res.message) {
-      // 避免 WebSocket 重复
-      const exists = state.messages.some((m) => m.id === res.message.id);
-      if (!exists) {
-        state.messages.push(res.message);
-        state.totalMessages += 1;
-        appendSingleMessage(res.message);
-      }
-    }
+    if (res.message) await receiveMessage(res.message);
   } catch (err) {
     if (err.message !== '上传已取消') {
       console.error('文件上传错误:', err);
@@ -817,6 +872,7 @@ async function processUploadQueue() {
 
 async function enqueueFilesForUpload(fileList) {
   if (!fileList || fileList.length === 0) return;
+  const groupId = state.currentGroup === 'all' ? null : state.currentGroup;
   const files = Array.from(fileList);
 
   // 1. 处理 HEIC 转换
@@ -862,7 +918,8 @@ async function enqueueFilesForUpload(fileList) {
       file: f,
       filename: f.name || 'file',
       thumbnailBlob: thumbBlob,
-      remark: ''
+      remark: '',
+      groupId
     });
   }
 
@@ -884,7 +941,8 @@ async function enqueueFilesForUpload(fileList) {
       file: uploadFile,
       filename: uploadFile.name || 'image',
       thumbnailBlob: thumbBlob,
-      remark: ''
+      remark: '',
+      groupId
     });
   }
   state.setImageProcessing(false);
@@ -899,16 +957,11 @@ async function handleSendText() {
 
   sendTextBtn.disabled = true;
   try {
-    const res = await sendTextMessage({ content, remark: '' });
+    const res = await sendTextMessage({ content, remark: '', groupId: state.currentGroup === 'all' ? null : state.currentGroup });
     textInput.value = '';
     textInput.style.height = 'auto';
 
-    const exists = state.messages.some((m) => m.id === res.message.id);
-    if (!exists) {
-      state.messages.push(res.message);
-      state.totalMessages += 1;
-      appendSingleMessage(res.message);
-    }
+    if (res.message) await receiveMessage(res.message);
   } catch (err) {
     showToast(err.message || '发送失败');
   } finally {
@@ -1036,6 +1089,7 @@ function updateSearchResultCount() {
 
 // 注意：本函数与服务端 src/storage.js 的 isVideoMessage/matchesKeyword 存在等价实现，修改时需同步
 function matchesCurrentSearch(msg) {
+  if (state.currentGroup !== 'all' && msg.groupId !== state.currentGroup) return false;
   if (!hasActiveFilter()) return true;
   const category = state.searchCategory || 'all';
   const keyword = (state.searchKeyword || '').trim().toLowerCase();
@@ -1178,26 +1232,15 @@ if (searchPills) {
 }
 
 // ========== 标签页切换 ==========
-function switchTab(tabName) {
+function switchTab(tabName, groupId = 'all') {
   state.currentTab = tabName;
-  tabs.forEach((tab) => {
-    tab.classList.toggle('active', tab.dataset.tab === tabName);
-  });
+  state.currentGroup = groupId;
+  groupControls.render();
+  document.querySelector('.tabs .tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   document.querySelectorAll('.tab-panel').forEach((panel) => {
     panel.classList.toggle('active', panel.dataset.panel === tabName);
   });
-  if (state.isSearchActive) {
-    if (tabName === 'messages') {
-      loadInitialMessages();
-    } else if (tabName === 'favorites') {
-      loadFavorites();
-    }
-  } else {
-    if (tabName === 'favorites') {
-      renderFavorites();
-      loadFavorites();
-    }
-  }
+  return refreshGroupView();
 }
 
 tabs.forEach((tab) => {
@@ -1207,34 +1250,18 @@ tabs.forEach((tab) => {
 // ========== 清空未收藏消息 ==========
 if (clearAllBtn) {
   clearAllBtn.addEventListener('click', () => {
-    // 把「会删多少、留多少」写进确认文案，让用户在点确定前就完成预判
-    const favoriteTotal = state.totalFavorites || 0;
-    const clearableCount = Math.max(0, (state.totalMessages || 0) - favoriteTotal);
+    const groupId = state.currentGroup;
+    const scope = groupId === 'all' ? '所有消息' : state.groups.find((group) => group.id === groupId).name;
+    const favoriteTotal = state.totalFavorites;
+    const clearableCount = Math.max(0, state.totalMessages - favoriteTotal);
     showConfirmModal(
-      clearableCount > 0
-        ? `确定要清空未收藏的消息吗？\n将删除 ${clearableCount} 条消息，保留 ${favoriteTotal} 条收藏。`
-        : '确定要清空未收藏的消息吗？',
+      `确定清空「${scope}」的未收藏消息？\n将删除 ${clearableCount} 条消息，保留 ${favoriteTotal} 条收藏。搜索和类型筛选不影响清空范围。`,
       async () => {
         try {
-          const res = await apiClearAll();
-          state.messages = state.messages.filter((m) => m.favorite);
-          state.hasMoreMessages = false;
-          // 清空后仅剩收藏消息，标签页两个计数都收敛到收藏数
-          const kept = res && Number.isFinite(res.favoriteCount) ? res.favoriteCount : state.favorites.length;
-          state.totalMessages = kept;
-          state.totalFavorites = kept;
-          renderMessages();
-          if (state.currentTab === 'favorites') renderFavorites();
-
-          if (window.ImageCache) {
-            window.ImageCache.clearNonFavoriteThumbnails(state.userId);
-            updateCacheButtonDisplay();
-          }
-          if (res && res.favoriteCount > 0) {
-            showToast(`已清空，保留 ${res.favoriteCount} 条收藏`);
-          } else {
-            showToast('已清空未收藏的消息');
-          }
+          const res = await apiClearAll(groupId);
+          applyClearedMessages(res);
+          await refreshGroupView();
+          showToast(`已清空 ${res.ids.length} 条未收藏消息`);
         } catch (err) {
           showToast(err.message || '清空失败');
         }
@@ -1308,8 +1335,13 @@ function logout(showMessage = true) {
   state.isAuthenticated = false;
   state.messages = [];
   state.favorites = [];
+  state.groups = [];
+  state.currentGroup = 'all';
+  groupControls.close();
+  groupControls.render();
   state.totalMessages = 0;
   state.totalFavorites = 0;
+  state.counts = { messages: 0, favorites: 0, groups: {} };
   updateTabCounts();
   state.userId = null;
   state.displayName = '';
@@ -1350,8 +1382,7 @@ function enterApp() {
   }
 
   connectSocket();
-  loadInitialMessages();
-  loadFavorites();
+  groupControls.load().then(() => refreshGroupView());
   updateCacheButtonDisplay();
 
   if (expireCheckInterval) clearInterval(expireCheckInterval);
@@ -1419,46 +1450,38 @@ initSocketConnection({
     }
   },
   onNewMessage: (msg) => {
-    const isLocalMessage = msg.sourceClientId === getClientId();
-    const exists = state.messages.some((m) => m.id === msg.id);
-    if (!exists) {
-      state.totalMessages += 1;
-      updateTabCounts();
-      if (state.isSearchActive) {
-        if (!matchesCurrentSearch(msg)) {
-          if (!isLocalMessage) showToast('收到新消息（不符合当前筛选条件）');
-          return;
-        }
-        state.searchTotal = (state.searchTotal || 0) + 1;
-        updateSearchResultCount();
-      }
-      state.messages.push(msg);
-      appendSingleMessage(msg);
-      if (!isLocalMessage) showToast('收到新消息');
+    if (msg.sourceClientId !== getClientId()) {
+      showToast(matchesCurrentSearch(msg) ? '收到新消息' : '收到新消息（不符合当前筛选条件）');
     }
+    receiveMessage(msg);
   },
-  onDeleteMessage: (id) => removeSingleMessage(id),
+  onDeleteMessage: (id) => {
+    removeSingleMessage(id);
+    refreshGroupView({ scrollBottom: false, preserveHistory: true });
+  },
   onClearMessages: (data) => {
-    state.messages = state.messages.filter((m) => m.favorite);
-    state.hasMoreMessages = false;
-    const kept = data && Number.isFinite(data.favoriteCount) ? data.favoriteCount : state.favorites.length;
-    state.totalMessages = kept;
-    state.totalFavorites = kept;
-    renderMessages();
-    if (state.currentTab === 'favorites') renderFavorites();
-    if (window.ImageCache) {
-      window.ImageCache.clearNonFavoriteThumbnails(state.userId);
-      updateCacheButtonDisplay();
-    }
-    if (data && data.favoriteCount > 0) {
-      showToast(`已清空，保留 ${data.favoriteCount} 条收藏`);
-    }
+    applyClearedMessages(data);
+    refreshGroupView({ scrollBottom: false, preserveHistory: true });
   },
   onFavoriteMessage: (data) => {
     updateSingleMessageFavorite(data.id, data.favorite, data.message);
+    loadFavorites();
   },
   onRemarkMessage: (data) => {
     updateSingleMessageRemark(data.id, data.remark);
+    if (hasActiveFilter()) refreshGroupView({ scrollBottom: false, preserveHistory: true });
+  },
+  onGroupsUpdated: (data) => {
+    groupControls.apply(data.groups, data.counts);
+    const groupIds = new Set(data.groups.map((group) => group.id));
+    for (const message of [...state.messages, ...state.favorites]) {
+      if (!groupIds.has(message.groupId)) message.groupId = null;
+    }
+    refreshGroupView({ scrollBottom: false, preserveHistory: true });
+  },
+  onMessageGroup: (message) => {
+    state.messages = state.messages.map((item) => item.id === message.id ? message : item).filter(matchesCurrentSearch);
+    refreshGroupView({ scrollBottom: false, preserveHistory: true });
   },
   onAuthError: () => {
     showToast('身份验证失效，请重新登录');
@@ -1470,15 +1493,8 @@ initSocketConnection({
 state.on('socket:reconnect', () => {
   if (state.isAuthenticated && !state.isReconnectRefreshing) {
     state.isReconnectRefreshing = true;
-    fetchMessages({ limit: PAGE_SIZE })
-      .then((data) => {
-        state.messages = data.messages || [];
-        state.hasMoreMessages = Boolean(data.hasMore);
-        if (Number.isFinite(data.total) && !hasActiveFilter()) {
-          state.totalMessages = data.total;
-        }
-        renderMessages();
-      })
+    groupControls.load()
+      .then(() => refreshGroupView({ scrollBottom: false }))
       .catch((err) => console.error('重连刷新消息失败:', err))
       .finally(() => { state.isReconnectRefreshing = false; });
   }
@@ -1502,6 +1518,7 @@ document.addEventListener('keydown', (e) => {
     remarkModal.close();
     shareModal.close();
     shareListModal.close();
+    groupControls.close();
     const confirmModal = document.getElementById('confirm-modal');
     if (confirmModal && !confirmModal.classList.contains('hidden')) {
       const cancelBtn = document.getElementById('modal-cancel');

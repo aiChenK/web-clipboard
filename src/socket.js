@@ -93,6 +93,22 @@ const socketHelper = {
     }
   },
 
+  broadcastGroups(userId, data) {
+    if (userId) {
+      this.io.to(userId).emit('groups-updated', data);
+    } else {
+      this.io.emit('groups-updated', data);
+    }
+  },
+
+  broadcastMessageGroup(userId, message) {
+    if (userId) {
+      this.io.to(userId).emit('message-group', message);
+    } else {
+      this.io.emit('message-group', message);
+    }
+  },
+
   // 踢下线指定用户的全部连接（禁用 / 删除 / 重置密码后调用）
   disconnectUser(userId) {
     if (!this.io || !userId) return;
