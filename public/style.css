@@ -1156,12 +1156,9 @@ mark.search-highlight {
   background: var(--inset);
 }
 
-.messages-top-loading {
-  padding: 10px var(--sp-5) 0;
-  font-family: var(--mono);
-  font-size: var(--fs-100);
-  letter-spacing: 0.08em;
-  color: var(--faint);
+.older-messages-control {
+  padding: var(--sp-2) var(--sp-5);
+  background: var(--inset);
   text-align: center;
 }
 
@@ -1347,6 +1344,10 @@ mark.search-highlight {
   background: var(--accent-soft);
   border-color: var(--accent-line);
   color: var(--accent-deep);
+}
+
+.share-creation-disabled .message-share-btn {
+  display: none;
 }
 
 /* 右栏内容统一落在第 2 列 */

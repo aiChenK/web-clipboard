@@ -13,11 +13,9 @@ const {
   ADMIN_PASSWORD,
   APP_VERSION,
   USERS_FILE,
-  STORAGE_ROOT,
-  EXPIRE_HOURS,
-  MESSAGE_PAGE_SIZE,
-  SHARE_MAX_EXPIRE_HOURS
+  STORAGE_ROOT
 } = require('../config');
+const { getSettings, getShareConfig, parseSettings, saveSettings } = require('../settings');
 const {
   isMultiUserMode,
   listUsers,
@@ -43,6 +41,7 @@ const { timingSafeCompare } = require('../utils');
 const { syncModeAfterUserChange, getCurrentMode } = require('../mode');
 const { socketHelper } = require('../socket');
 const { deleteSharesByUser, getShareList } = require('../share');
+const { scheduleOrphanFileCleanup } = require('../cleanup');
 
 const router = express.Router();
 
@@ -168,12 +167,24 @@ router.get('/status', wrap(async (req, res) => {
     shareCount,
     storageRoot: STORAGE_ROOT,
     usersFile: USERS_FILE,
-    expireHours: EXPIRE_HOURS,
-    messagePageSize: MESSAGE_PAGE_SIZE,
-    shareMaxExpireHours: SHARE_MAX_EXPIRE_HOURS,
+    ...getSettings(),
     legacyDataPending: await legacyDataExists(),
     usersFileExists: await fs.access(USERS_FILE).then(() => true, () => false)
   });
+}));
+
+router.put('/settings', wrap(async (req, res) => {
+  let settings;
+  try {
+    settings = parseSettings(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  const saved = await saveSettings(settings);
+  scheduleOrphanFileCleanup(saved.fileCleanupIntervalMinutes);
+  socketHelper.broadcastUploadLimit(saved.uploadMaxFileSizeMiB);
+  socketHelper.broadcastShareConfig(getShareConfig(saved));
+  return res.json(saved);
 }));
 
 // ========== 用户列表 ==========

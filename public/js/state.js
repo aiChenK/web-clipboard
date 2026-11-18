@@ -16,6 +16,7 @@ class StateManager {
     this.groups = [];
     this.currentGroup = 'all';
     this.hasMoreMessages = false;
+    this.messagePageCursor = null;
 
     // 当前范围计数用于列表与清空，全局计数用于消息 / 收藏入口。
     this.totalMessages = 0;

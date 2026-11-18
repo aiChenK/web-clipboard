@@ -3,13 +3,12 @@ const path = require('path');
 const {
   PORT,
   MIGRATE_DEFAULT_USER,
-  EXPIRE_HOURS,
   STORAGE_ROOT,
   UPLOAD_ROOT,
-  FILE_CLEANUP_INTERVAL_MINUTES,
   USERS_FILE
 } = require('./src/config');
 const { ensureDir } = require('./src/utils');
+const { getSettings, loadSettings } = require('./src/settings');
 const { loadPersistedState, migrateLegacyData, SINGLE_USER_DATA_FILE, flushAllPersist } = require('./src/storage');
 const { cleanupOrphanDiskFiles, cleanupExpiredData, startCleanupSchedulers } = require('./src/cleanup');
 const { createApp } = require('./src/app');
@@ -67,6 +66,7 @@ async function reconcileLegacyUserDirs() {
 
 async function start() {
   await ensureDir(STORAGE_ROOT);
+  await loadSettings();
 
   // 加载用户表（users.json 缺失时从 ACCESS_PASSWORDS 一次性导入）
   await loadUsers();
@@ -140,9 +140,9 @@ async function start() {
       console.log(`用户表文件: ${USERS_FILE}`);
     }
     console.log(`密码保护: ${isMultiUserMode() ? '已启用' : (process.env.ACCESS_PASSWORD ? '已启用' : '未启用（无密码模式）')}`);
-    console.log(`数据过期时间: ${EXPIRE_HOURS} 小时`);
+    console.log(`数据过期时间: ${getSettings().expireHours} 小时`);
     console.log(`数据存储目录: ${STORAGE_ROOT}`);
-    console.log(`孤儿文件清理间隔: ${FILE_CLEANUP_INTERVAL_MINUTES} 分钟`);
+    console.log(`孤儿文件清理间隔: ${getSettings().fileCleanupIntervalMinutes} 分钟`);
   });
 
   // 优雅停机：先落盘脏数据，再关闭连接，3 秒兜底强制退出

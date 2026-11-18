@@ -5,14 +5,22 @@
 import { createShare, authFetch, fetchShareConfig } from '../api.js';
 import { state } from '../state.js';
 
+const SHARE_EXPIRY_PRESETS = [1, 6, 24, 72, 168];
+
+function formatExpiryHours(hours) {
+  return hours % 24 === 0 ? `${hours / 24} 天` : `${hours} 小时`;
+}
+
 export class ShareModal {
-  constructor({ onToast }) {
+  constructor({ onToast, onCreationDisabledChange }) {
     this.onToast = onToast;
+    this.onCreationDisabledChange = onCreationDisabledChange;
     this.modal = document.getElementById('share-modal');
     this.form = document.getElementById('share-form') || (this.modal ? this.modal.querySelector('.share-form') : null);
     this.result = document.getElementById('share-result');
     this.expiresSelect = document.getElementById('share-expires');
     this.passwordInput = document.getElementById('share-password');
+    this.passwordLabel = document.getElementById('share-password-label');
     this.linkInput = document.getElementById('share-link');
     this.info = document.getElementById('share-info');
     this.cancelBtn = document.getElementById('share-cancel') || document.getElementById('share-cancel-btn');
@@ -20,20 +28,9 @@ export class ShareModal {
     this.copyBtn = document.getElementById('share-copy-link') || document.getElementById('share-copy-link-btn');
 
     this.currentMessage = null;
+    this.creationDisabled = false;
+    this.passwordRequired = false;
     this.initEvents();
-
-    // 按服务端 SHARE_MAX_EXPIRE_HOURS 收敛可选过期时长，避免展示必然被钳制的选项
-    if (this.expiresSelect) {
-      fetchShareConfig()
-        .then((cfg) => {
-          const maxHours = Number(cfg && cfg.maxExpiresHours);
-          if (!Number.isFinite(maxHours) || maxHours <= 0) return;
-          Array.from(this.expiresSelect.options).forEach((opt) => {
-            if (Number(opt.value) > maxHours) opt.remove();
-          });
-        })
-        .catch(() => {});
-    }
   }
 
   initEvents() {
@@ -58,15 +55,55 @@ export class ShareModal {
   }
 
   open(msg) {
+    if (this.creationDisabled) return;
     this.currentMessage = msg;
     if (this.form) this.form.classList.remove('hidden');
     if (this.result) this.result.classList.add('hidden');
     if (this.passwordInput) this.passwordInput.value = '';
-    if (this.expiresSelect) this.expiresSelect.value = '168';
+    if (this.expiresSelect) this.expiresSelect.value = '';
+    this.refreshConfig();
     if (this.modal) this.modal.classList.remove('hidden');
     if (this.passwordInput && typeof this.passwordInput.focus === 'function') {
       setTimeout(() => this.passwordInput.focus(), 50);
     }
+  }
+
+  async refreshConfig() {
+    try {
+      this.applyConfig(await fetchShareConfig());
+    } catch {
+      // 断线时沿用最近一次配置，创建请求仍由服务端校验。
+    }
+  }
+
+  applyConfig({ creationDisabled = false, passwordRequired = false, defaultExpiresHours, maxExpiresHours }) {
+    this.creationDisabled = creationDisabled;
+    this.passwordRequired = passwordRequired;
+    this.onCreationDisabledChange?.(creationDisabled);
+    if (this.passwordLabel) {
+      this.passwordLabel.textContent = passwordRequired ? '访问密码（必填）' : '访问密码（可选）';
+    }
+    if (this.passwordInput) {
+      this.passwordInput.required = passwordRequired;
+      this.passwordInput.placeholder = passwordRequired ? '请输入访问密码' : '留空则无需密码';
+    }
+    if (creationDisabled && this.currentMessage && !this.form?.classList.contains('hidden')) {
+      this.close();
+      this.onToast?.('管理员已禁止新建分享');
+    }
+    if (this.expiresSelect) this.renderExpiryOptions(defaultExpiresHours, maxExpiresHours);
+  }
+
+  renderExpiryOptions(defaultExpiresHours, maxExpiresHours) {
+    const selectedHours = this.expiresSelect.value;
+    const durations = [...new Set([...SHARE_EXPIRY_PRESETS, maxExpiresHours])]
+      .filter((hours) => hours <= maxExpiresHours && hours !== defaultExpiresHours)
+      .sort((a, b) => a - b);
+    this.expiresSelect.replaceChildren(
+      new Option(`${formatExpiryHours(defaultExpiresHours)}（默认）`, ''),
+      ...durations.map((hours) => new Option(formatExpiryHours(hours), hours))
+    );
+    if (durations.includes(Number(selectedHours))) this.expiresSelect.value = selectedHours;
   }
 
   close() {
@@ -75,10 +112,15 @@ export class ShareModal {
   }
 
   async handleCreate() {
-    if (!this.currentMessage) return;
+    if (!this.currentMessage || this.creationDisabled) return;
 
-    const expiresHours = parseInt(this.expiresSelect ? this.expiresSelect.value : '168', 10);
+    const expiresHours = this.expiresSelect?.value;
     const password = this.passwordInput ? this.passwordInput.value.trim() || null : null;
+    if (this.passwordRequired && !password) {
+      this.onToast?.('新建分享必须设置访问密码');
+      this.passwordInput?.focus();
+      return;
+    }
 
     try {
       if (this.createBtn) {
@@ -88,7 +130,7 @@ export class ShareModal {
 
       const payload = {
         messageId: this.currentMessage.id,
-        expiresHours
+        expiresHours: expiresHours ? Number(expiresHours) : undefined
       };
       if (state.currentMode === 'multi' && state.userId) {
         payload.userId = state.userId;

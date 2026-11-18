@@ -19,10 +19,15 @@ const multerStorage = multer.diskStorage({
   }
 });
 
-const uploadMiddleware = multer({
-  storage: multerStorage,
-  limits: { fileSize: 100 * 1024 * 1024 }
-});
+function uploadFields(maxFileSizeBytes) {
+  return multer({
+    storage: multerStorage,
+    limits: { fileSize: maxFileSizeBytes }
+  }).fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'thumbnail', maxCount: 1 }
+  ]);
+}
 
 // 写入二进制文件到上传目录
 async function writeBinaryToUpload({ category, id, buffer, mimeType, filenameHint, suffix = '', userId = null }) {
@@ -94,7 +99,7 @@ async function deleteMessageFiles(message, userId = null) {
 }
 
 module.exports = {
-  uploadMiddleware,
+  uploadFields,
   writeBinaryToUpload,
   resolveUploadAbsolute,
   removeFileIfExists,

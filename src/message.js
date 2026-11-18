@@ -1,6 +1,16 @@
 const { toUploadUrl, decodeDataUrl, normalizeImageIncomingContent, extensionFromMime, isDataUrl, sanitizeFilename } = require('./utils');
 const { writeBinaryToUpload } = require('./upload');
 
+class UploadSizeError extends Error {}
+
+function decodeUploadDataUrl(dataUrl, maxFileSizeBytes) {
+  const decoded = decodeDataUrl(dataUrl);
+  if (decoded.buffer.length > maxFileSizeBytes) {
+    throw new UploadSizeError();
+  }
+  return decoded;
+}
+
 // 转换为公开消息格式
 function toPublicMessage(message, userId = null) {
   const result = {
@@ -52,13 +62,16 @@ function toPublicMessage(message, userId = null) {
 }
 
 // 持久化图片内容
-async function persistImageContent(message, content, userId = null) {
+async function persistImageContent(message, content, userId, maxFileSizeBytes) {
   const normalized = normalizeImageIncomingContent(content);
   if (!normalized) {
     throw new Error('图片内容格式错误');
   }
 
-  const originalDecoded = decodeDataUrl(normalized.original);
+  const originalDecoded = decodeUploadDataUrl(normalized.original, maxFileSizeBytes);
+  const thumbnailDecoded = normalized.thumbnail === normalized.original
+    ? null
+    : decodeUploadDataUrl(normalized.thumbnail, maxFileSizeBytes);
   const originalPath = await writeBinaryToUpload({
     category: 'images',
     id: message.id,
@@ -72,8 +85,7 @@ async function persistImageContent(message, content, userId = null) {
   let thumbnailPath = originalPath;
   let thumbnailMimeType = originalDecoded.mimeType;
 
-  if (normalized.thumbnail !== normalized.original) {
-    const thumbnailDecoded = decodeDataUrl(normalized.thumbnail);
+  if (thumbnailDecoded) {
     thumbnailPath = await writeBinaryToUpload({
       category: 'images',
       id: message.id,
@@ -89,14 +101,14 @@ async function persistImageContent(message, content, userId = null) {
   message.content = {
     thumbnailPath,
     originalPath,
-    hasOriginal: normalized.thumbnail !== normalized.original,
+    hasOriginal: Boolean(thumbnailDecoded),
     thumbnailMimeType,
     originalMimeType: originalDecoded.mimeType
   };
 }
 
 // 持久化文件内容
-async function persistFileContent(message, content, userId = null) {
+async function persistFileContent(message, content, userId, maxFileSizeBytes) {
   if (!content || typeof content !== 'object') {
     throw new Error('文件内容格式错误');
   }
@@ -105,7 +117,7 @@ async function persistFileContent(message, content, userId = null) {
     throw new Error('文件 dataUrl 格式错误');
   }
 
-  const decoded = decodeDataUrl(content.dataUrl);
+  const decoded = decodeUploadDataUrl(content.dataUrl, maxFileSizeBytes);
   const originalName = sanitizeFilename(content.name || 'file');
   const filePath = await writeBinaryToUpload({
     category: 'files',
@@ -126,6 +138,7 @@ async function persistFileContent(message, content, userId = null) {
 
 module.exports = {
   toPublicMessage,
+  UploadSizeError,
   persistImageContent,
   persistFileContent
 };

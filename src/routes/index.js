@@ -1,11 +1,11 @@
 const path = require('path');
 const express = require('express');
-const { ACCESS_PASSWORD, ADMIN_PASSWORD, UPLOAD_ROOT } = require('../config');
+const { ACCESS_PASSWORD, ADMIN_PASSWORD, UPLOAD_ROOT, JSON_BODY_LIMIT } = require('../config');
 const { isMultiUserMode } = require('../users');
 const { getUserUploadRoot } = require('../storage');
 const { requireAuth } = require('../middleware/auth');
 const authRoutes = require('./auth');
-const messagesRoutes = require('./messages');
+const { router: messagesRoutes, createMessage } = require('./messages');
 const favoritesRoutes = require('./favorites');
 const groupsRoutes = require('./groups');
 const shareRoutes = require('./share');
@@ -103,9 +103,9 @@ function setupRoutes(app) {
   // 上传文件受控静态路由
   setupUploadRoutes(app);
 
-  // JSON 解析中间件（收缩至合理的 10MB 大小限制，防止畸形大 JSON DoS）
-  // 客户端仅使用 JSON 与 multipart/form-data，无需 urlencoded 解析器
-  app.use(express.json({ limit: '10mb' }));
+  // 消息提交支持 JSON 附件，自行按全站设置解析。其他接口沿用 10 MiB 请求体限制。
+  app.post('/api/messages', apiLimiter, createMessage);
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   // API 路由
   setupApiRoutes(app);

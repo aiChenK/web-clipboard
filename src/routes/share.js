@@ -2,17 +2,16 @@ const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { shareVerifyLimiter } = require('../middleware/rateLimit');
 const { createShare, getShareInfo, verifySharePassword, getShareContent, deleteShare, getShareList, loadShare } = require('../share');
-const { SHARE_MAX_EXPIRE_HOURS } = require('../config');
+const { getShareConfig } = require('../settings');
 const { getUserState } = require('../storage');
 const { resolveUploadAbsolute } = require('../upload');
 
 const router = express.Router();
 
-// 获取最大过期时间配置（必须放在 /:shareId 之前）
+// 获取分享创建配置（必须放在 /:shareId 之前）
 router.get('/config', (req, res) => {
-  res.json({
-    maxExpiresHours: SHARE_MAX_EXPIRE_HOURS
-  });
+  res.set('Cache-Control', 'no-store');
+  res.json(getShareConfig());
 });
 
 // 获取用户的分享列表（必须放在 /:shareId 之前）
@@ -30,11 +29,24 @@ router.get('/list', requireAuth, async (req, res) => {
 
 // 创建分享
 router.post('/', requireAuth, async (req, res) => {
+  const { creationDisabled, passwordRequired, defaultExpiresHours, maxExpiresHours } = getShareConfig();
+  if (creationDisabled) {
+    return res.status(403).json({ error: '管理员已禁止新建分享' });
+  }
+
   const userId = req.userId;
-  const { messageId, password, expiresHours } = req.body;
+  const { messageId, password, expiresHours } = req.body || {};
 
   if (!messageId) {
     return res.status(400).json({ error: '缺少消息ID' });
+  }
+  if (passwordRequired && (typeof password !== 'string' || !password.trim())) {
+    return res.status(400).json({ error: '新建分享必须设置访问密码' });
+  }
+
+  const requestedHours = Number(expiresHours || defaultExpiresHours);
+  if (!Number.isFinite(requestedHours) || requestedHours <= 0) {
+    return res.status(400).json({ error: '分享有效期必须为正数' });
   }
 
   try {
@@ -42,7 +54,7 @@ router.post('/', requireAuth, async (req, res) => {
       messageId,
       userId,
       password: password || null,
-      expiresHours: expiresHours || 24
+      expiresHours: Math.min(requestedHours, maxExpiresHours)
     });
 
     // 返回分享链接

@@ -7,15 +7,12 @@ const ACCESS_PASSWORDS = process.env.ACCESS_PASSWORDS || '';
 // 管理端密码：未配置时 /admin 与 /api/admin/* 一律 404（不暴露入口存在）
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const MIGRATE_DEFAULT_USER = process.env.MIGRATE_DEFAULT_USER || '';
-const EXPIRE_HOURS = Number.parseInt(process.env.EXPIRE_HOURS, 10) || 168;
-const MESSAGE_PAGE_SIZE = Number.parseInt(process.env.MESSAGE_PAGE_SIZE, 10) || 30;
-const SOCKET_SYNC_LIMIT = Number.parseInt(process.env.SOCKET_SYNC_LIMIT, 10) || 20;
-// 单条文本消息字符数上限（防止超大 JSON 体进入内存与持久化写放大）
-const TEXT_MESSAGE_MAX_LENGTH = Number.parseInt(process.env.TEXT_MESSAGE_MAX_LENGTH, 10) || 100000;
+const BYTES_PER_MIB = 1024 * 1024;
+const JSON_BODY_LIMIT = 10 * BYTES_PER_MIB;
+const MAX_MESSAGE_PAGE_SIZE = 100;
 
 const STORAGE_ROOT = process.env.STORAGE_ROOT || path.join(__dirname, '..', 'data');
 const UPLOAD_ROOT = process.env.UPLOAD_ROOT || path.join(STORAGE_ROOT, 'uploads');
-const FILE_CLEANUP_INTERVAL_MINUTES = Number.parseInt(process.env.FILE_CLEANUP_INTERVAL_MINUTES, 10) || 30;
 
 // 用户表文件：多用户模式的唯一真相源
 const USERS_FILE = process.env.USERS_FILE || path.join(STORAGE_ROOT, 'users.json');
@@ -23,7 +20,6 @@ const USERS_FILE = process.env.USERS_FILE || path.join(STORAGE_ROOT, 'users.json
 const USERS_DATA_ROOT = path.join(STORAGE_ROOT, 'users');
 
 // 分享功能配置
-const SHARE_MAX_EXPIRE_HOURS = Number.parseInt(process.env.SHARE_MAX_EXPIRE_HOURS, 10) || 168;
 const SHARE_DIR = path.join(STORAGE_ROOT, 'shares');
 
 // 用户名规则：全链路小写，同时作为数据目录名与上传 URL 段
@@ -97,9 +93,6 @@ if (ACCESS_PASSWORDS) {
   parseEnvUserSeeds(ACCESS_PASSWORDS);
 }
 
-// 常量
-const EXPIRE_TIME = EXPIRE_HOURS * 60 * 60 * 1000;
-
 // MIME 类型到扩展名映射
 const MIME_EXTENSION_MAP = {
   'image/jpeg': '.jpg',
@@ -125,13 +118,11 @@ module.exports = {
   ACCESS_PASSWORDS,
   ADMIN_PASSWORD,
   MIGRATE_DEFAULT_USER,
-  EXPIRE_HOURS,
-  MESSAGE_PAGE_SIZE,
-  SOCKET_SYNC_LIMIT,
-  TEXT_MESSAGE_MAX_LENGTH,
+  BYTES_PER_MIB,
+  JSON_BODY_LIMIT,
+  MAX_MESSAGE_PAGE_SIZE,
   STORAGE_ROOT,
   UPLOAD_ROOT,
-  FILE_CLEANUP_INTERVAL_MINUTES,
   APP_VERSION,
 
   // 用户表
@@ -143,10 +134,7 @@ module.exports = {
   envUserSeedWarnings,
 
   // 分享配置
-  SHARE_MAX_EXPIRE_HOURS,
   SHARE_DIR,
 
-  // 计算常量
-  EXPIRE_TIME,
   MIME_EXTENSION_MAP
 };

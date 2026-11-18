@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const { SHARE_DIR, SHARE_MAX_EXPIRE_HOURS } = require('./config');
+const { SHARE_DIR } = require('./config');
 const { ensureDir, createMessageId, timingSafeCompare } = require('./utils');
 const { getUserState } = require('./storage');
 const { toPublicMessage } = require('./message');
@@ -68,9 +68,7 @@ async function deleteShare(shareId) {
 
 // 创建分享
 async function createShare({ messageId, userId, password, expiresHours }) {
-  // 校验过期时间
-  const maxExpiresHours = Math.min(expiresHours || 24, SHARE_MAX_EXPIRE_HOURS);
-  const expiresAt = Date.now() + maxExpiresHours * 60 * 60 * 1000;
+  const expiresAt = Date.now() + expiresHours * 60 * 60 * 1000;
 
   // 获取消息
   const state = getUserState(userId);

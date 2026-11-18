@@ -36,6 +36,8 @@ export function initSocketConnection(callbacks = {}) {
     onRemarkMessage,
     onGroupsUpdated,
     onMessageGroup,
+    onUploadLimit,
+    onShareConfig,
     onAuthError
   } = callbacks;
 
@@ -97,6 +99,14 @@ export function initSocketConnection(callbacks = {}) {
 
   socket.on('message-group', (message) => {
     if (state.isAuthenticated && onMessageGroup) onMessageGroup(message);
+  });
+
+  socket.on('upload-limit', (maxSizeMiB) => {
+    if (state.isAuthenticated && onUploadLimit) onUploadLimit(maxSizeMiB);
+  });
+
+  socket.on('share-config', (config) => {
+    if (state.isAuthenticated && onShareConfig) onShareConfig(config);
   });
 
   return socket;

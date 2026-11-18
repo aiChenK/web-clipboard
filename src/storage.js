@@ -307,18 +307,22 @@ function filterMessages(messages, { keyword, category, groupId } = {}) {
   });
 }
 
+function messagesBefore(messages, before, beforeId) {
+  if (beforeId) {
+    const index = messages.findIndex((message) => message.id === beforeId);
+    if (index !== -1) return messages.slice(0, index);
+  }
+  if (!Number.isFinite(before)) return messages;
+  // 旧客户端只发时间戳时仍使用包含边界的分页。
+  return messages.filter(({ timestamp }) => timestamp < before || (!beforeId && timestamp === before));
+}
+
 // 获取消息分页
-function getMessagesPage({ before, limit, userId = null, keyword = null, category = null, groupId }) {
+function getMessagesPage({ before, beforeId, limit, userId = null, keyword = null, category = null, groupId }) {
   const state = getUserState(userId);
   const pageLimit = clampPageSize(limit);
-  
-  // 1. 先进行分类和关键词过滤
   const filteredMessages = filterMessages(state.messages, { keyword, category, groupId });
-
-  // 2. 沿用基于时间戳的游标分页（<= 含边界：同毫秒多条消息不会跨页丢失，客户端按 id 去重）
-  const source = Number.isFinite(before)
-    ? filteredMessages.filter((item) => item.timestamp <= before)
-    : filteredMessages;
+  const source = messagesBefore(filteredMessages, before, beforeId);
   const start = Math.max(source.length - pageLimit, 0);
   const page = source.slice(start);
 

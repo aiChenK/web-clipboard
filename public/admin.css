@@ -651,7 +651,8 @@ body::after {
 }
 
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="number"] {
   width: 100%;
   height: 40px;
   padding: 0 var(--sp-3);
@@ -670,12 +671,14 @@ input::placeholder {
 }
 
 input[type="text"]:hover,
-input[type="password"]:hover {
+input[type="password"]:hover,
+input[type="number"]:hover {
   border-color: var(--line-3);
 }
 
 input[type="text"]:focus,
-input[type="password"]:focus {
+input[type="password"]:focus,
+input[type="number"]:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
@@ -685,6 +688,20 @@ input[type="password"]:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: var(--sp-4);
   align-items: end;
+}
+
+.settings-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-options {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--sp-5);
+}
+
+.settings-actions {
+  margin-top: var(--sp-4);
 }
 
 .field-submit .btn {

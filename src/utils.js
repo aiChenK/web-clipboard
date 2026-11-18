@@ -1,12 +1,13 @@
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
-const { MIME_EXTENSION_MAP, MESSAGE_PAGE_SIZE } = require('./config');
+const { MIME_EXTENSION_MAP, MAX_MESSAGE_PAGE_SIZE } = require('./config');
+const { getSettings } = require('./settings');
 
 // 分页大小限制
 function clampPageSize(limit) {
-  if (!Number.isFinite(limit)) return MESSAGE_PAGE_SIZE;
-  return Math.min(Math.max(limit, 1), 100);
+  if (!Number.isFinite(limit)) return getSettings().messagePageSize;
+  return Math.min(Math.max(limit, 1), MAX_MESSAGE_PAGE_SIZE);
 }
 
 // 检查是否为 Data URL

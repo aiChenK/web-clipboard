@@ -3,7 +3,6 @@
  */
 
 import {
-  PAGE_SIZE,
   TOP_LOAD_THRESHOLD,
   LARGE_IMAGE_THRESHOLD_BYTES,
   STORAGE_KEYS
@@ -64,6 +63,8 @@ const passwordInput = document.getElementById('password-input');
 const authBtn = document.getElementById('auth-btn');
 const authError = document.getElementById('auth-error');
 const messagesList = document.getElementById('messages-list');
+const olderMessagesControl = document.getElementById('older-messages-control');
+const loadOlderMessagesBtn = document.getElementById('load-older-messages');
 const favoritesList = document.getElementById('favorites-list');
 const textInput = document.getElementById('text-input');
 const sendTextBtn = document.getElementById('send-text');
@@ -77,6 +78,7 @@ const currentUserEl = document.getElementById('current-user');
 const connectionStatus = document.getElementById('connection-status');
 const messageCount = document.getElementById('message-count');
 const expireInfo = document.getElementById('expire-info');
+const uploadLimitInfo = document.getElementById('upload-limit-info');
 const toastEl = document.getElementById('toast');
 const imageProcessingState = document.getElementById('image-processing-state');
 const tabs = document.querySelectorAll('.tab[data-tab]');
@@ -133,7 +135,8 @@ const remarkModal = new RemarkModal({
 const imageChoiceModal = new ImageChoiceModal();
 
 const shareModal = new ShareModal({
-  onToast: showToast
+  onToast: showToast,
+  onCreationDisabledChange: (disabled) => chatSection.classList.toggle('share-creation-disabled', disabled)
 });
 
 const shareListModal = new ShareListModal({
@@ -260,6 +263,7 @@ function renderEmptyState() {
 }
 
 function renderMessages({ scrollBottom = false } = {}) {
+  renderOlderMessagesControl();
   groupControls.closeMoveMenu();
   if (state.isInitialLoading && state.messages.length === 0) {
     renderLoadingState();
@@ -358,6 +362,7 @@ function removeSingleMessage(id) {
 
   if (state.messages.length === 0) {
     renderEmptyState();
+    renderOlderMessagesControl();
   }
 
   if (window.ImageCache) {
@@ -597,7 +602,6 @@ async function loadInitialMessages({ scrollBottom = true, preserveHistory = fals
 
   try {
     const data = await fetchMessages({
-      limit: PAGE_SIZE,
       keyword: state.searchKeyword,
       category: state.searchCategory,
       groupId: state.currentGroup
@@ -614,13 +618,17 @@ async function loadInitialMessages({ scrollBottom = true, preserveHistory = fals
     state.totalMessages = data.totalMessages;
     state.totalFavorites = data.totalFavorites;
     state.counts = data.counts;
-    if (!preserveHistory) state.hasMoreMessages = Boolean(data.hasMore);
+    if (!preserveHistory || !state.messagePageCursor) {
+      state.hasMoreMessages = Boolean(data.hasMore);
+      state.messagePageCursor = page[0] || null;
+    }
     if (state.currentTab === 'messages') state.searchTotal = data.total;
     updateSearchResultCount();
 
+    renderUploadLimit(data.uploadMaxFileSizeMiB);
     if (data.expireHours && expireInfo) {
-      expireInfo.textContent = data.expireHours >= 24
-        ? `消息将在 ${Math.round(data.expireHours / 24)} 天后过期`
+      expireInfo.textContent = data.expireHours % 24 === 0
+        ? `消息将在 ${data.expireHours / 24} 天后过期`
         : `消息将在 ${data.expireHours} 小时后过期`;
     }
   } catch (error) {
@@ -634,35 +642,37 @@ async function loadInitialMessages({ scrollBottom = true, preserveHistory = fals
   }
 }
 
-const topLoadingIndicator = document.createElement('div');
-topLoadingIndicator.className = 'messages-top-loading hidden';
-topLoadingIndicator.textContent = '正在加载更早消息...';
-if (messagesList && messagesList.parentElement) {
-  messagesList.parentElement.insertBefore(topLoadingIndicator, messagesList);
+function renderOlderMessagesControl() {
+  if (!loadOlderMessagesBtn) return;
+  olderMessagesControl.classList.toggle('hidden', !state.hasMoreMessages || !state.messagePageCursor || !state.messages.length);
+  loadOlderMessagesBtn.disabled = state.isInitialLoading || state.isLoadingOlder;
+  loadOlderMessagesBtn.textContent = state.isLoadingOlder ? '正在加载更早消息…' : '加载更早消息';
 }
 
 async function loadOlderMessages() {
-  if (state.isLoadingOlder || !state.hasMoreMessages || state.messages.length === 0) return;
+  const cursor = state.messagePageCursor;
+  if (state.isInitialLoading || state.isLoadingOlder || !state.hasMoreMessages || !cursor) return;
   state.isLoadingOlder = true;
-  topLoadingIndicator.classList.remove('hidden');
+  renderOlderMessagesControl();
 
   const viewKey = getViewKey();
-  const oldestTimestamp = state.messages[0].timestamp;
   const prevScrollHeight = messagesList.scrollHeight;
   const prevScrollTop = messagesList.scrollTop;
 
   try {
     const data = await fetchMessages({
-      before: oldestTimestamp,
-      limit: PAGE_SIZE,
+      before: cursor.timestamp,
+      beforeId: cursor.id,
       keyword: state.searchKeyword,
       category: state.searchCategory,
       groupId: state.currentGroup
     });
     if (!state.isAuthenticated || viewKey !== getViewKey()) return;
     const existingIds = new Set(state.messages.map((message) => message.id));
-    const olderMessages = (data.messages || []).filter((message) => !existingIds.has(message.id));
+    const page = data.messages || [];
+    const olderMessages = page.filter((message) => !existingIds.has(message.id));
     state.hasMoreMessages = Boolean(data.hasMore);
+    state.messagePageCursor = page[0] || null;
 
     if (olderMessages.length > 0) {
       state.messages = [...olderMessages, ...state.messages];
@@ -691,13 +701,15 @@ async function loadOlderMessages() {
     showToast('加载更早消息失败');
   } finally {
     state.isLoadingOlder = false;
-    topLoadingIndicator.classList.add('hidden');
+    renderOlderMessagesControl();
   }
 }
 
+loadOlderMessagesBtn?.addEventListener('click', loadOlderMessages);
+
 if (messagesList) {
   messagesList.addEventListener('scroll', () => {
-    if (messagesList.scrollTop <= TOP_LOAD_THRESHOLD && !state.isLoadingOlder && state.hasMoreMessages) {
+    if (messagesList.scrollTop <= TOP_LOAD_THRESHOLD && messagesList.scrollHeight > messagesList.clientHeight) {
       loadOlderMessages();
     }
   });
@@ -801,6 +813,12 @@ if (clearCacheBtn) {
 }
 
 // ========== 上传队列与媒体处理 ==========
+function renderUploadLimit(maxSizeMiB) {
+  if (uploadLimitInfo && maxSizeMiB) {
+    uploadLimitInfo.textContent = ` · 单个文件上限 ${maxSizeMiB} MiB`;
+  }
+}
+
 function updateUploadProgress(percent, filename) {
   if (!uploadProgressContainer) return;
   uploadProgressContainer.classList.remove('hidden');
@@ -1334,6 +1352,8 @@ function logout(showMessage = true) {
 
   state.isAuthenticated = false;
   state.messages = [];
+  state.hasMoreMessages = false;
+  state.messagePageCursor = null;
   state.favorites = [];
   state.groups = [];
   state.currentGroup = 'all';
@@ -1382,6 +1402,7 @@ function enterApp() {
   }
 
   connectSocket();
+  shareModal.refreshConfig();
   groupControls.load().then(() => refreshGroupView());
   updateCacheButtonDisplay();
 
@@ -1483,6 +1504,8 @@ initSocketConnection({
     state.messages = state.messages.map((item) => item.id === message.id ? message : item).filter(matchesCurrentSearch);
     refreshGroupView({ scrollBottom: false, preserveHistory: true });
   },
+  onUploadLimit: renderUploadLimit,
+  onShareConfig: (config) => shareModal.applyConfig(config),
   onAuthError: () => {
     showToast('身份验证失效，请重新登录');
     logout(false);

@@ -8,9 +8,9 @@
   <title>Web Clipboard - 用户管理</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <meta name="theme-color" content="#f3f2ee">
-  <link rel="stylesheet" href="/admin.css?v=1.8.5">
+  <link rel="stylesheet" href="/admin.css?v=1.8.6">
   <!-- 主题引导：绘制前同步执行，避免深色用户首屏闪白 -->
-  <script src="/theme.js?v=1.8.5"></script>
+  <script src="/theme.js?v=1.8.6"></script>
 </head>
 
 <body>
@@ -98,6 +98,63 @@
             <div class="value path" id="stat-storage">-</div>
           </div>
         </div>
+      </section>
+
+      <section class="section" aria-labelledby="sec-settings">
+        <div class="section-label">
+          <h2 id="sec-settings">全站设置</h2>
+          <span class="rule" aria-hidden="true"></span>
+        </div>
+        <form id="site-settings" class="card">
+          <div class="form-grid settings-grid">
+            <div class="field">
+              <label for="setting-expire-hours">消息保留期（小时）</label>
+              <input type="number" id="setting-expire-hours" name="expireHours" min="1" required>
+            </div>
+            <div class="field">
+              <label for="setting-share-default">分享默认有效期（小时）</label>
+              <input type="number" id="setting-share-default" name="shareDefaultExpireHours" min="1" required>
+            </div>
+            <div class="field">
+              <label for="setting-share-max">分享最长有效期（小时）</label>
+              <input type="number" id="setting-share-max" name="shareMaxExpireHours" min="1" required>
+            </div>
+            <div class="field">
+              <label for="setting-text-max">单条文本长度上限（字符）</label>
+              <input type="number" id="setting-text-max" name="textMessageMaxLength" min="1" required>
+            </div>
+            <div class="field">
+              <label for="setting-upload-max">单个文件上传上限（MiB）</label>
+              <input type="number" id="setting-upload-max" name="uploadMaxFileSizeMiB" min="1" required>
+            </div>
+            <div class="field">
+              <label for="setting-page-size">消息分页大小（条）</label>
+              <input type="number" id="setting-page-size" name="messagePageSize" min="1" max="100" required>
+            </div>
+            <div class="field">
+              <label for="setting-socket-limit">WebSocket 首次同步条数</label>
+              <input type="number" id="setting-socket-limit" name="socketSyncLimit" min="1" max="100" required>
+            </div>
+            <div class="field">
+              <label for="setting-cleanup-interval">孤儿文件清理间隔（分钟）</label>
+              <input type="number" id="setting-cleanup-interval" name="fileCleanupIntervalMinutes" min="1" max="35791" required>
+            </div>
+          </div>
+          <div class="settings-options">
+            <label class="checkbox-row">
+              <input type="checkbox" name="shareCreationDisabled">
+              <span>禁止新建分享</span>
+            </label>
+            <label class="checkbox-row">
+              <input type="checkbox" name="sharePasswordRequired">
+              <span>分享必须设置密码</span>
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button id="save-settings" type="submit" class="btn btn-primary" disabled>保存设置</button>
+          </div>
+          <p id="settings-msg" class="msg" role="status"></p>
+        </form>
       </section>
 
       <section class="section" aria-labelledby="sec-create">
@@ -205,7 +262,7 @@
 
   <div id="toast" class="toast"></div>
 
-  <script src="/admin.js?v=1.8.5"></script>
+  <script src="/admin.js?v=1.8.6"></script>
 </body>
 
 </html>

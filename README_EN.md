@@ -115,9 +115,12 @@ npm start
 | `EXPIRE_HOURS` | Data expiration time (hours) | `168` (7 days) |
 | `MESSAGE_PAGE_SIZE` | Messages loaded per page | `30` |
 | `SOCKET_SYNC_LIMIT` | Socket initial sync limit | `20` |
+| `TEXT_MESSAGE_MAX_LENGTH` | Maximum characters per text message (v1.7.1+) | `100000` |
 | `STORAGE_ROOT` | Data root directory | `./data` |
 | `FILE_CLEANUP_INTERVAL_MINUTES` | Interval for cleaning up orphan files (minutes) | `30` |
 | `SHARE_MAX_EXPIRE_HOURS` | Maximum expiration time for shared links (hours) | `168` (7 days) |
+
+See [Site-wide settings](#site-wide-settings) for the settings you can edit in the admin console and their configuration precedence.
 
 ## Run Modes
 
@@ -146,11 +149,35 @@ Set `ADMIN_PASSWORD` and open `/admin` to:
 - Create users (optionally migrating leftover single-user data to the new user), reset passwords, enable/disable, delete (optionally purging data)
 - Inspect per-user message count, favorites, storage usage and last activity
 - Inspect run mode, version, share count, expiration settings and the user-table path
+- Edit [site-wide settings](#site-wide-settings)
 
 Admin credentials travel in the `x-admin-password` header and are fully independent from user login. Changes take effect immediately without a restart:
 
 - Password reset / disable / delete immediately drops that user's live connections
 - A disabled account gets 403 on login; deleting the last user falls back to single-user mode (requires explicit confirmation and clears all share links)
+
+#### Site-wide Settings
+
+Open the Site-wide Settings (全站设置) section in `/admin` (v1.8.6+). Each setting takes effect as shown below after you save, without a service restart.
+
+| Setting | Built-in default | Allowed values | When it takes effect after saving | Environment variable |
+|---------|------------------|----------------|-----------------------------------|----------------------|
+| Message retention period | 168 hours (7 days) | Positive integer in hours | At the next expiration cleanup. The service checks every 5 minutes while running | `EXPIRE_HOURS` |
+| Default share lifetime | 168 hours (7 days), capped at the maximum share lifetime | 1 hour up to the current maximum share lifetime | Becomes the default when the next share is created | None |
+| Maximum share lifetime | 168 hours (7 days) | Positive integer in hours, at least as large as the default share lifetime | Caps the lifetime of the next share created | `SHARE_MAX_EXPIRE_HOURS` |
+| Text message length limit | 100,000 characters | Positive integer in characters | The server uses this limit for the next text message submission | `TEXT_MESSAGE_MAX_LENGTH` |
+| Single-file upload limit | 100 MiB | 1 MiB up to the Node.js runtime limit, typically 188 MiB on 64-bit Node.js | The next form or JSON upload is checked against the actual byte size of each file. Open pages update the displayed limit in real time | None |
+| Disable new shares | Off | On or off | Immediately hides the option to create a share, and the API rejects new share requests | None |
+| Require a share password | Off | On or off | The share dialog immediately requires a password, and the API rejects new shares with a blank password | None |
+| Message page size | 30 messages | 1–100 messages | When the main page next loads its initial messages, search results, or older messages | `MESSAGE_PAGE_SIZE` |
+| Initial WebSocket sync limit | 20 messages | 1–100 messages | On the next connection in single-user mode, or the next join of the user's room in multi-user mode | `SOCKET_SYNC_LIMIT` |
+| Orphan file cleanup interval | 30 minutes | 1–35,791 minutes | Changing the interval cancels the old timer and starts a new one from the time of the save | `FILE_CLEANUP_INTERVAL_MINUTES` |
+
+Enter whole numbers for numeric settings. The validation limit for values listed as positive integers is JavaScript's maximum safe integer, `9007199254740991`. The text length setting controls server-side validation. The main page's text box has a `maxlength` of `100000`. With login protection enabled, JSON request bodies larger than 10 MiB require the `x-access-password` header. Multi-user mode also requires `x-user-id`.
+
+Shortening the retention period prompts for confirmation. The next cleanup removes expired, non-favorite messages along with their attachments and shares. Favorite messages are retained. If both share switches are on, Disable new shares takes precedence. Existing links continue to use their original expiration times and access passwords.
+
+From highest to lowest, configuration precedence is **`<STORAGE_ROOT>/settings.json` → corresponding environment variable → built-in default**. The service reads the file at startup from `./data/settings.json` by default. If the file is missing, or an older file lacks a setting added later, the service uses the corresponding environment variable or built-in default. Saving in the admin console writes every setting in the form. The service uses those saved values after a restart.
 
 ### Migration from Single-user to Multi-user
 

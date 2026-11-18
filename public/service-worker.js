@@ -1,5 +1,5 @@
-// 发布版本 + 静态资源修订；升级分组界面时淘汰旧的资源缓存。
-const CACHE_NAME = 'web-clipboard-v1.8.5';
+// 发布版本 + 静态资源修订。
+const CACHE_NAME = 'web-clipboard-v1.8.6';
 const ASSETS = [
   '/',
   '/index.html',

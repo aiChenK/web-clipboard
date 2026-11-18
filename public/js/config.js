@@ -2,7 +2,6 @@
  * 应用配置与全局常量
  */
 
-export const PAGE_SIZE = 30;
 export const TOP_LOAD_THRESHOLD = 60;
 export const ORIGINAL_FETCH_TIMEOUT = 5000;
 // 缩略图上限边长（列表秒开与清晰度的折中，需与 createThumbnailBlob 保持一致）

@@ -1,4 +1,5 @@
-const { ACCESS_PASSWORD, SOCKET_SYNC_LIMIT } = require('./config');
+const { ACCESS_PASSWORD } = require('./config');
+const { getSettings, getShareConfig } = require('./settings');
 const { isMultiUserMode, authenticate } = require('./users');
 const { getMessagesPage } = require('./storage');
 const { toPublicMessage } = require('./message');
@@ -109,6 +110,14 @@ const socketHelper = {
     }
   },
 
+  broadcastUploadLimit(maxSizeMiB) {
+    this.io.emit('upload-limit', maxSizeMiB);
+  },
+
+  broadcastShareConfig(config) {
+    this.io.emit('share-config', config);
+  },
+
   // 踢下线指定用户的全部连接（禁用 / 删除 / 重置密码后调用）
   disconnectUser(userId) {
     if (!this.io || !userId) return;
@@ -166,6 +175,8 @@ function setupSocket(io) {
 
   io.on('connection', (socket) => {
     console.log('用户连接:', socket.id, '绑定用户ID:', socket.userId);
+    socket.emit('upload-limit', getSettings().uploadMaxFileSizeMiB);
+    socket.emit('share-config', getShareConfig());
 
     if (socket.userId) {
       socket.on('join', (userId) => {
@@ -176,7 +187,7 @@ function setupSocket(io) {
 
           const initialPage = getMessagesPage({
             before: Number.NaN,
-            limit: SOCKET_SYNC_LIMIT,
+            limit: getSettings().socketSyncLimit,
             userId
           });
 
@@ -192,7 +203,7 @@ function setupSocket(io) {
     } else {
       const initialPage = getMessagesPage({
         before: Number.NaN,
-        limit: SOCKET_SYNC_LIMIT
+        limit: getSettings().socketSyncLimit
       });
 
       socket.emit('sync', {

@@ -56,9 +56,10 @@ export async function login(userId, password) {
 }
 
 // 分页获取消息列表（支持关键词搜索与分类筛选）
-export async function fetchMessages({ before, limit, keyword, category, groupId } = {}) {
+export async function fetchMessages({ before, beforeId, limit, keyword, category, groupId } = {}) {
   const params = new URLSearchParams();
   if (before) params.set('before', before);
+  if (beforeId) params.set('beforeId', beforeId);
   if (limit) params.set('limit', limit);
   if (groupId && groupId !== 'all') params.set('groupId', groupId);
   if (keyword) params.set('keyword', keyword);
@@ -283,7 +284,7 @@ export async function createShare(params) {
   return data;
 }
 
-// 获取分享最大有效期配置
+// 获取分享创建配置
 export async function fetchShareConfig() {
   const response = await fetch('/api/share/config');
   if (!response.ok) {

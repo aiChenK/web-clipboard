@@ -1,6 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { EXPIRE_TIME, STORAGE_ROOT, FILE_CLEANUP_INTERVAL_MINUTES } = require('./config');
+const { STORAGE_ROOT } = require('./config');
+const { getSettings } = require('./settings');
 const { isMultiUserMode } = require('./users');
 const { getUserState, userStates, loadPersistedState, getUploadRoot, schedulePersist } = require('./storage');
 const { deleteMessageFiles, getMessageFileRefs } = require('./upload');
@@ -9,16 +10,18 @@ const { cleanupExpiredShares, deleteSharesByMessageId } = require('./share');
 const { socketHelper } = require('./socket');
 
 let cleanupRunning = false;
+let orphanCleanupTimer;
+let orphanCleanupIntervalMinutes;
 
 // 清理过期数据
 async function cleanupExpiredData(userId = null) {
   const state = getUserState(userId);
-  const now = Date.now();
+  const cutoff = Date.now() - getSettings().expireHours * 60 * 60 * 1000;
   const keptMessages = [];
   const expiredMessages = [];
 
   for (const msg of state.messages) {
-    if (msg.favorite || now - msg.timestamp <= EXPIRE_TIME) {
+    if (msg.favorite || msg.timestamp >= cutoff) {
       keptMessages.push(msg);
     } else {
       expiredMessages.push(msg);
@@ -226,6 +229,13 @@ async function cleanupTempUploads(maxAgeMs = 2 * 60 * 60 * 1000) {
   }
 }
 
+function scheduleOrphanFileCleanup(intervalMinutes) {
+  if (intervalMinutes === orphanCleanupIntervalMinutes) return;
+  clearInterval(orphanCleanupTimer);
+  orphanCleanupTimer = setInterval(cleanupAllUsersOrphanFiles, intervalMinutes * 60 * 1000);
+  orphanCleanupIntervalMinutes = intervalMinutes;
+}
+
 // 启动清理定时任务
 function startCleanupSchedulers() {
   // 服务启动时立即执行一次过期数据、分享清理与临时上传清理
@@ -234,7 +244,7 @@ function startCleanupSchedulers() {
   cleanupTempUploads().catch((error) => console.error('初始临时文件清理失败:', error));
 
   setInterval(cleanupAllUsersExpiredData, 5 * 60 * 1000);
-  setInterval(cleanupAllUsersOrphanFiles, FILE_CLEANUP_INTERVAL_MINUTES * 60 * 1000);
+  scheduleOrphanFileCleanup(getSettings().fileCleanupIntervalMinutes);
   setInterval(cleanupExpiredShares, 5 * 60 * 1000);
   setInterval(cleanupTempUploads, 30 * 60 * 1000); // 每 30 分钟清理一次遗留临时文件
 }
@@ -245,5 +255,6 @@ module.exports = {
   cleanupOrphanDiskFiles,
   cleanupAllUsersOrphanFiles,
   cleanupTempUploads,
+  scheduleOrphanFileCleanup,
   startCleanupSchedulers
 };

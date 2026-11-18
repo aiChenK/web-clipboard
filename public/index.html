@@ -6,11 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Web Clipboard - 跨设备剪贴板</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <link rel="stylesheet" href="style.css?v=1.8.5">
+  <link rel="stylesheet" href="style.css?v=1.8.6">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#f3f2ee">
   <!-- 主题引导：必须在样式之后、绘制之前同步执行，否则深色用户会看到首屏闪白 -->
-  <script src="theme.js?v=1.8.5"></script>
+  <script src="theme.js?v=1.8.6"></script>
   <!-- 首屏引导：已有本地凭证时，认证状态需要一次网络确认才可知。
        在确认前先挂 data-boot="pending" 交出引导态，避免已登录用户
        先看到登录表单再被切走（无凭证时不挂，登录表单立即渲染） -->
@@ -50,7 +50,7 @@
       </div>
       <div class="header-side">
         <span class="header-rule" aria-hidden="true"></span>
-        <span id="version" class="version-badge">v1.8.5</span>
+        <span id="version" class="version-badge">v1.8.6</span>
         <button type="button" class="theme-toggle" data-theme-toggle aria-pressed="false"
           aria-label="切换到深色模式" title="切换到深色模式"></button>
       </div>
@@ -130,10 +130,15 @@
 
       <div class="tab-panel active" data-panel="messages">
         <div class="chat-container">
+          <div id="older-messages-control" class="older-messages-control hidden">
+            <button id="load-older-messages" type="button" class="btn btn-secondary btn-small">加载更早消息</button>
+          </div>
           <div id="messages-list" class="messages-list"></div>
 
           <div class="input-area" id="drop-zone">
-            <p id="send-group-hint" class="send-group-hint">发送到：未分组 · 收藏后免于自动过期</p>
+            <p class="send-group-hint">
+              <span id="send-group-hint">发送到：未分组 · 收藏后免于自动过期</span><span id="upload-limit-info"></span>
+            </p>
             <div class="drop-overlay hidden" id="drop-overlay">
               <div class="drop-content">
                 <span class="drop-icon">📁</span>
@@ -260,15 +265,11 @@
         <div class="share-form-group">
           <label for="share-expires">过期时间</label>
           <select id="share-expires" class="share-select">
-            <option value="1">1 小时</option>
-            <option value="6">6 小时</option>
-            <option value="24">24 小时</option>
-            <option value="72">3 天</option>
-            <option value="168" selected>7 天</option>
+            <option value="">使用全站默认有效期</option>
           </select>
         </div>
         <div class="share-form-group">
-          <label for="share-password">访问密码（可选）</label>
+          <label id="share-password-label" for="share-password">访问密码（可选）</label>
           <input type="text" id="share-password" class="share-input" placeholder="留空则无需密码">
         </div>
         <div class="share-actions">
@@ -332,9 +333,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
-  <script src="utils.js?v=1.8.5"></script>
-  <script src="cache.js?v=1.8.5"></script>
-  <script type="module" src="app.js?v=1.8.5"></script>
+  <script src="utils.js?v=1.8.6"></script>
+  <script src="cache.js?v=1.8.6"></script>
+  <script type="module" src="app.js?v=1.8.6"></script>
 </body>
 
 </html>

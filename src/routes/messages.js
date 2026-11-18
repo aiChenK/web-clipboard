@@ -1,32 +1,69 @@
 const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
-const { EXPIRE_HOURS, TEXT_MESSAGE_MAX_LENGTH } = require('../config');
+const { ACCESS_PASSWORD, BYTES_PER_MIB, JSON_BODY_LIMIT } = require('../config');
+const { getSettings } = require('../settings');
+const { isMultiUserMode } = require('../users');
 const { requireAuth } = require('../middleware/auth');
 const { getUserState, getMessagesPage, schedulePersist, filterMessages } = require('../storage');
 const { getUploadRoot, getUserUploadRoot } = require('../storage');
-const { uploadMiddleware, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
-const { toPublicMessage, persistImageContent, persistFileContent } = require('../message');
+const { uploadFields, resolveUploadAbsolute, deleteMessageFiles, removeFileIfExists } = require('../upload');
+const { toPublicMessage, UploadSizeError, persistImageContent, persistFileContent } = require('../message');
 const { createMessageId, toDateFolder, sanitizeFilename, decodeFilename, extensionFromMime, ensureDir, toPosixPath, normalizeImageIncomingContent, decodeDataUrl } = require('../utils');
 const { deleteSharesByMessageId } = require('../share');
 
 const { getMessageCounts, parseGroupId, validateGroup } = require('../groups');
 
 const router = express.Router();
+const parseStandardJson = express.json({ limit: JSON_BODY_LIMIT });
+
+function sendUploadTooLarge(res, uploadMaxFileSizeMiB) {
+  return res.status(413).json({ error: `单个文件不能超过 ${uploadMaxFileSizeMiB} MiB` });
+}
+
+function parseMessageBody(req, res, next) {
+  const { uploadMaxFileSizeMiB } = getSettings();
+  req.uploadMaxFileSizeMiB = uploadMaxFileSizeMiB;
+  const multiUser = isMultiUserMode();
+  const hasAuthHeaders = req.get('x-access-password') && (!multiUser || req.get('x-user-id'));
+
+  if ((multiUser || ACCESS_PASSWORD) && !hasAuthHeaders) {
+    // 保留旧客户端在请求体里传凭证的方式，大请求先用请求头认证。
+    return parseStandardJson(req, res, (error) => {
+      if (error?.type === 'entity.too.large') {
+        return res.status(413).json({ error: '较大的 JSON 上传请通过请求头传递登录凭证' });
+      }
+      if (error) return next(error);
+      return requireAuth(req, res, next);
+    });
+  }
+
+  return requireAuth(req, res, () => {
+    const maxFileSizeBytes = uploadMaxFileSizeMiB * BYTES_PER_MIB;
+    const maxBase64Bytes = 4 * Math.ceil(maxFileSizeBytes / 3);
+    const parseUploadJson = express.json({ limit: 2 * maxBase64Bytes + JSON_BODY_LIMIT });
+    parseUploadJson(req, res, (error) => {
+      if (error?.type === 'entity.too.large') return sendUploadTooLarge(res, uploadMaxFileSizeMiB);
+      return next(error);
+    });
+  });
+}
 
 // 获取消息列表（支持关键词搜索与分类筛选）
 router.get('/', requireAuth, validateGroup('query', true), (req, res) => {
   const userId = req.userId;
   const before = Number(req.query.before);
+  const beforeId = typeof req.query.beforeId === 'string' ? req.query.beforeId : undefined;
   const limit = Number(req.query.limit);
   const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim() : '';
   const category = typeof req.query.category === 'string' ? req.query.category.trim() : 'all';
-  const page = getMessagesPage({ before, limit, userId, keyword, category, groupId: req.groupId });
+  const page = getMessagesPage({ before, beforeId, limit, userId, keyword, category, groupId: req.groupId });
 
   const state = getUserState(userId);
   const scopedMessages = filterMessages(state.messages, { groupId: req.groupId });
   const counts = getMessageCounts(state);
 
+  const { expireHours, uploadMaxFileSizeMiB } = getSettings();
   res.json({
     ...page,
     messages: page.messages.map((msg) => toPublicMessage(msg, userId)),
@@ -35,21 +72,22 @@ router.get('/', requireAuth, validateGroup('query', true), (req, res) => {
     allFavoritesTotal: counts.favorites,
     totalMessages: scopedMessages.length,
     totalFavorites: scopedMessages.filter((msg) => msg.favorite).length,
-    expireHours: EXPIRE_HOURS
+    expireHours,
+    uploadMaxFileSizeMiB
   });
 });
 
-// 创建消息（文本）
-router.post('/', requireAuth, validateGroup('body'), async (req, res) => {
+// 创建文本消息，也兼容以 Data URL 上传附件的客户端。
+const createMessage = [parseMessageBody, validateGroup('body'), async (req, res) => {
   const userId = req.userId;
   const state = getUserState(userId);
-  const { type, content } = req.body;
+  const { type, content, remark: incomingRemark } = req.body || {};
 
   if (!type || !content) {
     return res.status(400).json({ error: '缺少必要参数' });
   }
 
-  const remark = typeof req.body.remark === 'string' ? req.body.remark.trim().slice(0, 500) : '';
+  const remark = typeof incomingRemark === 'string' ? incomingRemark.trim().slice(0, 500) : '';
 
   const message = {
     id: createMessageId(),
@@ -60,23 +98,27 @@ router.post('/', requireAuth, validateGroup('body'), async (req, res) => {
     timestamp: Date.now()
   };
 
+  const { uploadMaxFileSizeMiB } = req;
+  const maxFileSizeBytes = uploadMaxFileSizeMiB * BYTES_PER_MIB;
   try {
     if (type === 'image') {
-      await persistImageContent(message, content, userId);
+      await persistImageContent(message, content, userId, maxFileSizeBytes);
     } else if (type === 'file') {
-      await persistFileContent(message, content, userId);
+      await persistFileContent(message, content, userId, maxFileSizeBytes);
     } else if (type === 'text') {
       if (typeof content !== 'string' || !content.trim()) {
         return res.status(400).json({ error: '文本内容不能为空' });
       }
-      if (content.length > TEXT_MESSAGE_MAX_LENGTH) {
-        return res.status(413).json({ error: `文本内容过长，上限 ${TEXT_MESSAGE_MAX_LENGTH} 字符` });
+      const { textMessageMaxLength } = getSettings();
+      if (content.length > textMessageMaxLength) {
+        return res.status(413).json({ error: `文本内容过长，上限 ${textMessageMaxLength} 字符` });
       }
       message.content = content;
     } else {
       return res.status(400).json({ error: '不支持的消息类型' });
     }
   } catch (error) {
+    if (error instanceof UploadSizeError) return sendUploadTooLarge(res, uploadMaxFileSizeMiB);
     console.error('处理消息失败:', error);
     return res.status(400).json({ error: '消息内容格式错误' });
   }
@@ -91,16 +133,13 @@ router.post('/', requireAuth, validateGroup('body'), async (req, res) => {
   req.app.get('io').broadcastMessage(userId, publicMessage, req.get('x-client-id') || null);
 
   return res.json({ success: true, message: publicMessage });
-});
+}];
 
 // multipart/form-data 上传
-const uploadFields = uploadMiddleware.fields([
-  { name: 'file', maxCount: 1 },
-  { name: 'thumbnail', maxCount: 1 }
-]);
-
 router.post('/upload', requireAuth, (req, res, next) => {
-  uploadFields(req, res, (err) => {
+  const { uploadMaxFileSizeMiB } = getSettings();
+  uploadFields(uploadMaxFileSizeMiB * BYTES_PER_MIB)(req, res, (err) => {
+    if (err?.code === 'LIMIT_FILE_SIZE') return sendUploadTooLarge(res, uploadMaxFileSizeMiB);
     if (err) {
       console.error('上传中间件错误:', err);
       return res.status(400).json({ error: err.message || '文件上传失败' });
@@ -397,4 +436,4 @@ const handleUpdateRemark = async (req, res) => {
 router.patch('/:id/remark', requireAuth, handleUpdateRemark);
 router.post('/:id/remark', requireAuth, handleUpdateRemark);
 
-module.exports = router;
+module.exports = { router, createMessage };

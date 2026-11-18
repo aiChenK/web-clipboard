@@ -25,6 +25,10 @@
   const newIdInput = document.getElementById('new-id');
   const newNameInput = document.getElementById('new-name');
   const newPasswordInput = document.getElementById('new-password');
+  const settingsForm = document.getElementById('site-settings');
+  const settingsInputs = Array.from(settingsForm.querySelectorAll('input[name]'));
+  const settingsMsg = document.getElementById('settings-msg');
+  const saveSettingsBtn = document.getElementById('save-settings');
 
   const modeBadge = document.getElementById('mode-badge');
   const versionBadge = document.getElementById('version-badge');
@@ -53,6 +57,7 @@
 
   let adminPassword = sessionStorage.getItem(STORAGE_KEY) || '';
   let currentUsers = [];
+  let savedExpireHours;
   let pendingDeleteId = null;
   let pendingDeleteIsLast = false;
   let pendingPasswordId = null;
@@ -183,12 +188,12 @@
     // 单用户模式且存在遗留数据时才提示迁移
     migrateRow.classList.toggle('hidden', !(session.mode === 'single' && session.legacyDataPending));
 
-    refreshAll();
+    refreshAll(true);
   }
 
   // ========== 数据刷新 ==========
 
-  async function refreshAll() {
+  async function refreshAll(loadSettings = false) {
     try {
       const [status, usersPayload] = await Promise.all([
         adminRequest('/api/admin/status'),
@@ -196,6 +201,7 @@
       ]);
 
       renderStatus(status);
+      if (loadSettings) renderSettings(status);
       currentUsers = usersPayload.users || [];
       renderUsers(currentUsers);
       setMessage(listMsg, '', '');
@@ -215,6 +221,48 @@
     statStorage.textContent = status.storageRoot || '-';
     statUsersFile.title = status.usersFile || '';
     statStorage.title = status.storageRoot || '';
+  }
+
+  function renderSettings(settings) {
+    for (const input of settingsInputs) {
+      if (input.type === 'checkbox') {
+        input.checked = settings[input.name];
+      } else {
+        input.value = settings[input.name];
+      }
+    }
+    savedExpireHours = settings.expireHours;
+    saveSettingsBtn.disabled = false;
+  }
+
+  async function saveSiteSettings(event) {
+    event.preventDefault();
+    const settings = Object.fromEntries(settingsInputs.map((input) => [
+      input.name, input.type === 'checkbox' ? input.checked : input.valueAsNumber
+    ]));
+    setMessage(settingsMsg, '');
+    if (settings.shareDefaultExpireHours > settings.shareMaxExpireHours) {
+      setMessage(settingsMsg, '分享默认有效期不能超过最长有效期', 'error');
+      return;
+    }
+    if (settings.expireHours < savedExpireHours && !window.confirm(
+      `消息保留期将从 ${savedExpireHours} 小时缩短至 ${settings.expireHours} 小时。下次清理将删除超期的未收藏消息及其关联附件和分享链接，删除后无法恢复。确定保存？`
+    )) return;
+
+    saveSettingsBtn.disabled = true;
+    try {
+      const saved = await adminRequest('/api/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings)
+      });
+      renderSettings(saved);
+      statExpire.textContent = `${saved.expireHours} 小时`;
+      setMessage(settingsMsg, '全站设置已保存', 'ok');
+    } catch (error) {
+      setMessage(settingsMsg, error.message, 'error');
+    } finally {
+      saveSettingsBtn.disabled = false;
+    }
   }
 
   function renderUsers(users) {
@@ -434,7 +482,8 @@
     adminPasswordInput.focus();
   });
 
-  refreshBtn.addEventListener('click', () => refreshAll());
+  refreshBtn.addEventListener('click', () => refreshAll(true));
+  settingsForm.addEventListener('submit', saveSiteSettings);
   createBtn.addEventListener('click', createUser);
 
   newPasswordInput.addEventListener('keydown', (event) => {
